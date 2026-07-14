@@ -1,0 +1,20 @@
+MIGRATION LOGIC CONCEPT SPACE
+
+PURPOSE
+The authored Light work survives improvements to code, renderer, representation, and Windows adapters.
+
+DIRECT MIGRATION FLOW
+- Every file and chunk declares its format generation.
+- The current parser understands its own generation plus deliberately retained prior generations.
+- Read a prior work into the shared authored model; migration never rewrites source bytes in place.
+- Apply explicit ordered transformations whose inputs, outputs, purpose, and expected count changes are recorded.
+- Preserve unknown chunks as inert bounded bodies when safe, or portray exactly why the new app cannot apply them.
+- Resolve actual Light references by exact name, place, expression, and source digest; a technical lookup change cannot rename a conceptual unit.
+- Write the migrated authored body as a new candidate.
+- Reopen and compare conceptual bodies, relations, expressions, recipes, geometry, text/math, resources, and divinand routes.
+- Keep the prior complete work and a migration receipt until Miles deliberately releases them.
+- Renderer changes regenerate portrayals from authored causes.
+- Windows adapter changes keep the same semantic commands and authored effects.
+
+MIGRATION RECEIPT
+Source generation; destination generation; transformations applied; retained unknown material; authored counts before/after; Light references before/after; hashes; candidate path; protected prior path; reopen result; recovery command.

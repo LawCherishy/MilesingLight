@@ -1,0 +1,51 @@
+WIN32 CONCEPT SPACE
+
+PURPOSE
+Win32 gives the original Light application a permanent native desktop encounter: window, messages, pointer, keyboard, focus, text composition, local files, timers, accessibility opening, and ordinary Windows security.
+
+FEATURE TO DIRECT CODE
+- Application entry: wWinMain initializes COM, the app body, the renderer, and one visible top-level window.
+- Window class: RegisterClassExW binds the application-owned WndProc.
+- Window creation: CreateWindowExW creates the Milesing desktop body with a Unicode title and per-monitor DPI awareness.
+- Message life: PeekMessageW/TranslateMessage/DispatchMessageW keep rendering, input, animation, and cancellation responsive.
+- Resize: WM_SIZE resizes the DXGI buffers and rebuilds only device-dependent render targets.
+- Frame request: invalidate on authored change; use a finite timer only while animation or live manifestation is active.
+- Pointer encounter: WM_POINTER or mouse messages feed one authored command path for point, drag, wheel, region, and camera movement.
+- Keyboard encounter: WM_KEYDOWN/WM_CHAR feed semantic commands, text, workspace movement, reversal, reapplication, save, recovery, and search.
+- Text composition: TSF/IME exposes the application text store and composition ranges for complete language input.
+- Focus: WM_SETFOCUS/WM_KILLFOCUS and an authored focus route preserve exact attention across canvas, text, timeline, inspector, and portals.
+- DPI: GetDpiForWindow and WM_DPICHANGED keep readable geometry and exact pointer conversion.
+- Local files: an application-owned local filesystem browser presents fixed/removable/local volumes and validated paths without opening remote shell locations.
+- Clipboard: internal copy/cut/paste stays application-local; deliberate system clipboard transfer is an explicit export command.
+- Drag/drop: selected local paths enter through bounded validation and inert preview before authored admission.
+- Timing: QueryPerformanceCounter drives finite frame timing and authored timelines.
+- Accessibility opening: WM_GETOBJECT returns the original UI Automation provider rooted in the same semantic command and authored-world model.
+- Shutdown: WM_CLOSE previews unsaved authored work; WM_DESTROY releases device bodies and posts quit.
+
+APPLICATION WORKSPACES
+- MY LIGHT: actual names, functions, expressions, divinand, and whole map encounter.
+- 2D FRACTAL: close authorship, relations, text/math, layout, pages/layers, search, and direct editing.
+- 3D FRACTAL: spatial placement, camera, portals, depth attention, generated geometry, and return to the same authored work.
+- OPERATIONS: operand selection, expression composition, preview, finite realization, results, and further application.
+- TIME/MEDIA: temporal relations, animation, generated portrayal, image/audio/video openings, and release/regeneration.
+- SYSTEM RELATION: the narrow bit-position-operand-hardware association, dormant until deliberately granted.
+
+ORIGINAL COMMAND RULE
+Every menu, shortcut, toolbar button, pointer gesture, screen-reader action, and future controller route invokes the same application command. The command owns applicability, preview, commitment, reversal, reapplication, receipt, and recovery.
+
+LIGHT INSIDE THE WINDOW CODE
+- WndProc feeds COMMANDSEA `action_prefix` when one authored action must occur before a following process and METHODICALLY `compose` when two compatible functions become one command.
+- A resize sequence is a real finite function operand for CHANGELY `forward_diff`; its result drives purpose-sized layout and buffer rebuilding.
+- Display-to-world coordinate conversion exposes a supplied map whose source attention can be calculated with WHYS `preimage`.
+- Technical selection membership can use EMPTISM `is_empty`, SIZE `cardinality`, and BINARISM `exclusive_or` for exact Boolean toggle behavior without naming conceptual units.
+- Keyboard traversal over an authored navigation graph can call QUEST `astar_path` when an admissible route heuristic and costs are supplied.
+- A bounded window/render dependency schedule can call TIMELY `maxplus_mv` on declared predecessor durations.
+- The complete command expression is DESIGNING `group`ed before preview and commitment; mathematical CEREMONIES reversal remains distinct from reversing an authored editing intention.
+- Each result returns through the shared expression/world body, so Win32 messages become living Milesing operations rather than a parallel event framework.
+
+MICROSOFT REFERENCE
+https://learn.microsoft.com/en-us/windows/win32/learnwin32/your-first-windows-program
+https://learn.microsoft.com/en-us/windows/win32/learnwin32/window-messages
+https://learn.microsoft.com/en-us/windows/win32/hidpi/high-dpi-desktop-application-development-on-windows
+https://learn.microsoft.com/en-us/windows/win32/input_pointer/pointer-input-messages
+https://learn.microsoft.com/en-us/windows/win32/tsf/text-services-framework

@@ -1,0 +1,62 @@
+ISO C++20 CONCEPT SPACE
+
+PURPOSE
+One native language carries the Light, authored worlds, editor, renderer, storage, recovery, accessibility bridge, and local machine participation. C++ is the material of the app, not an authority above Milesing mathematics.
+
+LIGHT IN CODE
+- Store every actual MY LIGHT entry as an exact UTF-8 name, branch, codable expression, mathematical origin, purpose, and callable contract.
+- Keep each named Light unit as the real self-number/conceptual body. Its assigned operator and mathematical-system origin are linked capabilities of that body; an operator result never replaces the body's identity.
+- Resolve functions by their actual names and map places. Technical indexes accelerate lookup only.
+- Represent an invocation as: actual authored Light-unit route + its assigned operator and system origin + actual designated operands and roles + authored purpose + requested manifestation + work allowance + result relation + divinand.
+- Make every valid invocation construct a real expression object immediately. Supported finite domains can also calculate a value immediately; every other valid call remains an executable symbolic recipe rather than a dead string.
+- Give every catalog entry a capability record for its genuine bounded finite executor, operand/result contract, mathematical domain, and intended C++ feature integration. Every expression route can become another operator's operand, so safe composition depth can expand without changing the authored language.
+- Return results as values, expressions, relations, worlds, generated portrayals, or further operands.
+- The same typed dispatch is called from window messages, editor commands, layout, camera mathematics, picking, render planning, temporal work, storage, recovery, and machine participation. Light execution is the app's internal language, not a detachable feature panel.
+
+EMBEDDING RULE
+- A Microsoft API supplies a physical capability: message, surface, glyph, file handle, clock, audio buffer, or assistive event.
+- The surrounding C++ function supplies actual Light references, typed operands, purpose, bound, and divinand.
+- A documented Light operation acts only when its ordinary mathematical domain fits those operands.
+- The result changes the authored world, calculation, work plan, portrayal, or recipe and remains available as another operand.
+- Technical fallback math stays ordinary technical math and never borrows a Light name decoratively.
+
+DIRECT LANGUAGE BUILDING BLOCKS
+- std::string and std::wstring: exact authored UTF-8/UTF-16 boundaries.
+- std::string_view: immutable catalog names and codable expressions.
+- std::variant: numbers, truth values, text, ordered values, vectors, matrices, relations, authored-world references, and symbolic calls.
+- std::vector and std::unordered_map: authored graph bodies, relations, registries, command lookup, and render batches.
+- std::optional: an exact value that may be absent from the present calculation without inventing one.
+- std::span: bounded views over pixels, vertices, chunks, operands, and file bytes.
+- std::unique_ptr and Microsoft::WRL::ComPtr: explicit ownership of original bodies and Windows interfaces.
+- std::chrono: finite durations, timelines, animation, cancellation checkpoints, and granted hardware sampling intervals.
+- std::jthread and std::stop_token: cancellable derivation, layout, import, regeneration, and media work.
+- std::filesystem: canonical application-local paths after Win32 validation.
+- std::endian and fixed-width integers: deterministic durable representation.
+
+ORIGINAL MATHEMATICAL BODY
+- Arbitrary-precision natural and signed integers using owned limbs.
+- Normalized rational values with exact numerator and denominator.
+- Exact finite decimal input retained as coefficient plus scale.
+- Complex and extended values where a Light function requires them.
+- Ordered sequences, sparse vectors, matrices, graphs, relations, partitions, polynomials, probability bodies, and symbolic expressions.
+- Numerical results carry their precision and comparison method; temporary graphics floats never replace authored exact values.
+- Growth retains operation + count + value symbolically and realizes only the requested finite span.
+- Mix retains authored chooser evidence or a reproducible local seed.
+- Spin uses the actual central classes and actual subclass relations.
+- Reversal preserves the original and resulting authored order.
+- Divinand accompanies every authored application and recoverable recipe.
+
+APP PATTERN
+- APP.txt is the one /TP translation unit and includes the other existing Source of Light Code files.
+- SUPPORT.txt owns shared values, the full Light catalog, expression construction, authored-world data, commands, and durable writing helpers.
+- 2DFRACTALIZER.txt and 3DFRACTALIZER.txt turn the same authored world into planar and spatial encounters.
+- RENDERER.txt owns the Microsoft graphics interfaces and purpose-sized drawing.
+- EDITOR.txt binds workspaces, input, selection, editing, history, search, timeline, and semantic commands.
+- SYSTEMLOGS.txt binds a technical bit occurrence to spatial operand positions and narrowly granted hardware levels.
+
+BUILD INTENT
+Compile APP.txt as C++ with /std:c++20 /utf-8 /permissive- /W4 /EHsc /DUNICODE /D_UNICODE and the static release runtime. The visible native build uses the locally installed signed MSVC and Windows SDK.
+
+MICROSOFT REFERENCE
+https://learn.microsoft.com/en-us/cpp/cpp/welcome-back-to-cpp-modern-cpp
+https://learn.microsoft.com/en-us/cpp/build/reference/std-specify-language-standard-version

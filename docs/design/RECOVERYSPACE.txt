@@ -1,0 +1,20 @@
+RECOVERY CONCEPT SPACE
+
+PURPOSE
+Opening the app finds the strongest complete local authored body and makes every recovery choice understandable before changing files.
+
+DIRECT RECOVERY FLOW
+- Inspect the selected final work, protected prior body, and known sibling candidates by header first.
+- Parse each body under strict byte, item, recursion, expansion, and duration ceilings.
+- Verify chunk and manifest digests.
+- Portray each complete candidate with generation, write time, logical root, authored-work summary, and exact path.
+- Prefer no body silently: show the current final first and make a stronger recoverable body visible as a deliberate choice.
+- Open a chosen body read-only before promoting it.
+- Promotion writes and verifies a new candidate, then follows the replacement flow.
+- Preserve the original recovery bodies until the promoted result has reopened successfully.
+- A missing render cache, search index, generated geometry body, or decoded image never damages authored work; regenerate it.
+- A recipe that depended on an expired non-derivable hardware sample portrays that dependency and opens a fresh present encounter only through a new exact grant.
+- Recovery commands are keyboard reachable and announced through the same semantic command model.
+
+CODE HOME
+SUPPORT.txt owns inspection, bounded parsing, comparison, and promotion. EDITOR.txt owns the visible recovery workspace. APP.txt owns explicit invocation and window messaging.

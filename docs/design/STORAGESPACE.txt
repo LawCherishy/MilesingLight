@@ -1,0 +1,36 @@
+STORAGE CONCEPT SPACE
+
+PURPOSE
+Store the authored cause of the work: actual Light references, conceptual bodies, relations, rooted expressions, exact operands or routes, authored geometry, compact regeneration recipes, chosen resources, commands needed for recovery, and integrity evidence. Renderer caches and expanded possibilities remain disposable.
+
+ORIGINAL MILESING WORK BODY
+- File header: magic, format generation, byte order, declared feature flags, root-work reference, and manifest location.
+- Canonical string table: exact UTF-8 Light names, authored text, purposes, units, and source routes.
+- Light catalog relation: exact catalog digest plus the actual names/places used by the work.
+- Conceptual bodies: stable local references, content, properties, exact text/math, authored 2D/3D geometry, time, media relations, and provenance.
+- Relations: exact endpoints, kind, purpose, order/direction when authored, portal request, and return route.
+- Rooted expressions: function reference, ordered operands, chooser evidence, purpose, bounds, result relation, and divinand.
+- Bit associations: carrier occurrence, spatial relation, actual Light relation, operand roles/order, synthetic or exact-grant hardware levels, duration, and expiry.
+- Commands: authored intention, prior values needed for reversal, result, and recovery boundary.
+- Recipes: sufficient deterministic cause, non-derivable retained inputs, versions, and comparison method.
+- Resources: deliberately retained local image/media/font/shader bodies with digests and licenses.
+- Evidence: integrity, representation generation, write receipt, reopen result, and local-effect summary.
+
+FORMAT BEHAVIOR
+- Bounded chunks allow unknown future chunks to be skipped and portrayed safely.
+- Shared authored bodies and cycles use explicit local references rather than repeated copies.
+- Canonical ordering makes equivalent authored work produce the same logical representation.
+- Each chunk declares compressed size, expanded ceiling, item ceiling, and SHA-256.
+- The manifest names every chunk and the root relation needed to reopen the work.
+- Temporary portrayals, decoded pixels, search indexes, layout accelerators, GPU buffers, and derived geometry are regenerated.
+
+CODE HOME
+SUPPORT.txt owns serialization and parsing. APP.txt invokes writing only through an explicit authored command. RENDERER.txt never becomes storage authority.
+
+LIGHT INSIDE WRITING
+- DESIGNING `group` makes one rooted recipe or authored work the complete unit selected for writing.
+- ALLAGE `fold_all` combines canonical chunk bytes only through the explicit byte-concatenation monoid and empty-byte unit before whole-manifest hashing.
+- SIZE `cardinality` records finite authored and chunk counts from their actual collections.
+- CEREMONIES `reverse` can reproduce reversed authored order when that mathematical result belongs in the work; file rollback uses the separate recovery command.
+- PLUGINS `operad_substitute` represents a typed capability recipe grafted into declared compatible openings and is serialized as the exact operation tree.
+- Divinand, exact Light references, operands, chooser/order evidence, purpose, and recovery route are stored with each rooted recipe so the file itself remains operable Milesing source.

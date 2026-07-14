@@ -1,0 +1,29 @@
+WINDOWS UI AUTOMATION CONCEPT SPACE
+
+PURPOSE
+The assistive encounter reaches the same Light, authored worlds, commands, text, mathematics, portals, timeline, writing, and recovery as the visual encounter.
+
+ORIGINAL PROVIDER BODY
+- WM_GETOBJECT exposes one root IRawElementProviderSimple for the Milesing window.
+- The provider tree is generated from the current semantic workspace and authored portrayal, not from invisible renderer objects.
+- Each reachable command exposes a stable name, purpose, keyboard route, enabled result, and Invoke pattern.
+- Workspaces, panels, portals, authored bodies, relations, operand sockets, timeline tracks, and evidence surfaces expose appropriate control types.
+- Focus changes follow the same authored attention path and raise UIA focus events.
+- Selection and multi-attention expose Selection/SelectionItem where the authored command supports them.
+- Editable properties expose Value or RangeValue.
+- Expandable authored regions expose ExpandCollapse.
+- Scrollable worlds expose Scroll while retaining their authored camera/viewport meaning.
+- Text and mathematical editors expose Text, TextEdit, Selection, caret, range movement, attributes, and offscreen document access.
+- Generated status and operation results raise concise live-region announcements.
+- Readable scale, system contrast, visible focus, and reduced motion alter portrayal while keeping authored meaning available.
+
+CODE CONNECTION
+- EDITOR.txt owns the semantic tree and command descriptions.
+- SUPPORT.txt owns exact text, expressions, authored bodies, and relation paths.
+- RENDERER.txt consumes accessibility emphasis and visual preferences.
+- APP.txt answers WM_GETOBJECT and forwards focus/event changes.
+
+MICROSOFT REFERENCE
+https://learn.microsoft.com/en-us/windows/win32/winauto/uiauto-providerportal
+https://learn.microsoft.com/en-us/windows/win32/winauto/uiauto-about-text-and-textrange-patterns
+https://learn.microsoft.com/en-us/windows/win32/winauto/uiauto-implementingprovs

@@ -1,0 +1,621 @@
+#ifndef MILESING_2D_FRACTALIZER_INCLUDED
+#define MILESING_2D_FRACTALIZER_INCLUDED 1
+
+namespace milesing {
+
+// The planar language never owns a second copy of the work.  It calculates a
+// portrayal of AuthoredWorld and writes intentional coordinate changes back to
+// that same world.
+struct RectD {
+    double x{};
+    double y{};
+    double width{};
+    double height{};
+
+    double right() const { return x + width; }
+    double bottom() const { return y + height; }
+    Vec2 center() const { return {x + width * 0.5, y + height * 0.5}; }
+    bool contains(Vec2 point) const {
+        return point.x >= x && point.x <= right() && point.y >= y && point.y <= bottom();
+    }
+};
+
+inline RectD normalized_rect(Vec2 first, Vec2 second) {
+    const double left = std::min(first.x, second.x);
+    const double top = std::min(first.y, second.y);
+    return {left, top, std::max(first.x, second.x) - left,
+            std::max(first.y, second.y) - top};
+}
+
+struct Camera2D {
+    Vec2 center{};
+    double zoom{1.0};
+    double minimum_zoom{0.08};
+    double maximum_zoom{12.0};
+
+    Vec2 world_to_screen(Vec2 world, RectD viewport) const {
+        const Vec2 middle = viewport.center();
+        return {middle.x + (world.x - center.x) * zoom,
+                middle.y + (world.y - center.y) * zoom};
+    }
+
+    // Ordinary inverse camera geometry retrieves the authored point whose
+    // portrayal is the supplied screen point.
+    Vec2 preimage(Vec2 screen, RectD viewport) const {
+        const Vec2 middle = viewport.center();
+        return {center.x + (screen.x - middle.x) / zoom,
+                center.y + (screen.y - middle.y) / zoom};
+    }
+
+    void pan_pixels(Vec2 delta) {
+        center = center - delta * (1.0 / zoom);
+    }
+
+    void zoom_at(Vec2 screen, double factor, RectD viewport) {
+        const Vec2 authored_before = preimage(screen, viewport);
+        zoom = std::clamp(zoom * factor, minimum_zoom, maximum_zoom);
+        const Vec2 authored_after = preimage(screen, viewport);
+        center = center + (authored_before - authored_after);
+    }
+};
+
+enum class PlanarDetail : std::uint8_t {
+    Presence,
+    Name,
+    Function
+};
+
+struct PlanarNode {
+    std::size_t id{no_node};
+    std::size_t catalog_index{};
+    Vec2 center{};
+    double radius{};
+    PlanarDetail detail{PlanarDetail::Presence};
+    bool selected{};
+    bool central{};
+    bool main_class{};
+};
+
+struct PlanarRelation {
+    std::size_t source{no_node};
+    std::size_t target{no_node};
+    Vec2 start{};
+    Vec2 end{};
+    double strength{1.0};
+};
+
+struct PortalInto3D {
+    RectD screen_bounds{};
+    std::size_t world_route{};
+    std::uint32_t requested_depth{1};
+    bool active{true};
+};
+
+struct FractalStroke2D {
+    Vec2 start{};
+    Vec2 end{};
+    double alpha{};
+};
+
+struct PlanarFrame {
+    RectD viewport{};
+    std::vector<PlanarNode> nodes{};
+    std::vector<PlanarRelation> relations{};
+    std::vector<FractalStroke2D> generated_strokes{};
+    PortalInto3D spatial_portal{};
+    double grid_spacing{32.0};
+    std::size_t visible_cardinality{};
+};
+
+struct AppliedReceiptDrain {
+    std::vector<AppliedOperation> ordered{};
+    std::uint64_t discarded_before_drain{};
+};
+
+class Fractalizer2D {
+public:
+    Fractalizer2D() = default;
+    explicit Fractalizer2D(LightRuntime& runtime) : runtime_(&runtime) {}
+
+    void bind(LightRuntime& runtime) { runtime_ = &runtime; }
+
+    Camera2D& camera() { return camera_; }
+    const Camera2D& camera() const { return camera_; }
+
+    std::int64_t spin_turn() const { return spin_turn_; }
+    std::uint32_t fractal_stage() const { return fractal_stage_; }
+    const std::optional<AppliedOperation>& last_receipt() const { return last_receipt_; }
+    std::span<const AppliedOperation> pending_receipts() const {
+        return {pending_receipts_.data(), pending_receipts_.size()};
+    }
+    std::uint64_t discarded_receipt_count() const { return discarded_receipts_; }
+
+    AppliedReceiptDrain take_receipts() {
+        AppliedReceiptDrain drain{std::move(pending_receipts_), discarded_receipts_};
+        pending_receipts_.clear();
+        discarded_receipts_ = 0;
+        return drain;
+    }
+
+    void set_fractal_stage(std::uint32_t stage) {
+        // A finite requested Hutchinson stage: no ambient recursion and no
+        // unbounded vertex multiplication.
+        fractal_stage_ = std::clamp<std::uint32_t>(stage, 0, maximum_fractal_stage_);
+    }
+
+    void arrange_light(AuthoredWorld& world, std::int64_t turn) {
+        spin_turn_ = turn;
+        const std::size_t center_id = central_node(world);
+        WorldNode* center = world.find(center_id);
+        if (!center) return;
+        center->planar = {};
+        center->extent = 43.0;
+
+        std::vector<WorldNode*> classes;
+        for (WorldNode& node : world.nodes) {
+            if (node.parent == center_id) classes.push_back(&node);
+        }
+        if (classes.empty()) return;
+
+        NameList class_names;
+        NameList subclass_names;
+        class_names.reserve(classes.size());
+        for (const WorldNode* node : classes) {
+            class_names.emplace_back(light_catalog[node->catalog_index].unit);
+            for (const WorldNode& candidate : world.nodes) {
+                if (candidate.parent == node->id) {
+                    subclass_names.emplace_back(light_catalog[candidate.catalog_index].unit);
+                }
+            }
+        }
+        NameList spun_subclasses = subclass_names;
+        std::optional<AppliedOperation> spin_application;
+        if (const std::optional<AuthoredInvocation> spun = invoke_rooted(
+                world, "UNIVERSING",
+                {designate(world, Operand::names(class_names),
+                           "actual central class order", center_id),
+                 designate(world, Operand::names(subclass_names),
+                           "actual subclass order", center_id),
+                 designate(world, Operand::integer(turn),
+                           "requested discrete planar turn", center_id)},
+                "shared planar node coordinates and relation portrayal",
+                "turn the actual central classes and organize their actual subclasses")) {
+            spin_application = spun->application;
+            if (spun->invocation.value) {
+                if (const NameList* order = std::get_if<NameList>(&spun->invocation.value->body);
+                    order && order->size() == class_names.size() + subclass_names.size()) {
+                    std::vector<WorldNode*> rotated_classes;
+                    rotated_classes.reserve(classes.size());
+                    for (std::size_t index = 0; index < class_names.size(); ++index) {
+                        if (WorldNode* node = world.find_unit((*order)[index])) rotated_classes.push_back(node);
+                    }
+                    if (rotated_classes.size() == classes.size()) classes = std::move(rotated_classes);
+                    spun_subclasses.assign(order->begin() + static_cast<std::ptrdiff_t>(class_names.size()),
+                                           order->end());
+                }
+            }
+        }
+        // The Spin operator assigned to the actual UNIVERSING body acts on the
+        // supplied class/subclass structure. Names remain exact and untouched.
+        const double class_step = 2.0 * pi / static_cast<double>(classes.size());
+        for (std::size_t class_index = 0; class_index < classes.size(); ++class_index) {
+            WorldNode& branch = *classes[class_index];
+            const double class_angle = -pi * 0.5 + class_step * static_cast<double>(class_index);
+            branch.planar = {std::cos(class_angle) * 255.0,
+                             std::sin(class_angle) * 255.0};
+            branch.rotation = class_angle;
+            branch.extent = 31.0;
+
+            std::vector<WorldNode*> subclasses;
+            for (WorldNode& candidate : world.nodes) {
+                if (candidate.parent == branch.id) subclasses.push_back(&candidate);
+            }
+            std::stable_sort(subclasses.begin(), subclasses.end(), [&](const WorldNode* left,
+                                                                       const WorldNode* right) {
+                const std::string_view left_name = light_catalog[left->catalog_index].unit;
+                const std::string_view right_name = light_catalog[right->catalog_index].unit;
+                const auto left_at = std::find(spun_subclasses.begin(), spun_subclasses.end(), left_name);
+                const auto right_at = std::find(spun_subclasses.begin(), spun_subclasses.end(), right_name);
+                return left_at < right_at;
+            });
+            for (std::size_t sub_index = 0; sub_index < subclasses.size(); ++sub_index) {
+                // The operator assigned to the actual SPIRALLY body receives
+                // its real layout (a,b,theta) operands.
+                const double theta = 0.48 * static_cast<double>(sub_index + 1);
+                const Vec2 local = invoke_log_spiral(world, subclasses[sub_index]->id,
+                                                     64.0, 0.075, theta);
+                const double c = std::cos(class_angle - 0.62);
+                const double s = std::sin(class_angle - 0.62);
+                subclasses[sub_index]->planar = branch.planar +
+                    Vec2{local.x * c - local.y * s, local.x * s + local.y * c};
+                subclasses[sub_index]->rotation = class_angle + theta;
+                subclasses[sub_index]->extent = 20.0;
+            }
+        }
+        if (spin_application) last_receipt_ = std::move(spin_application);
+        ++world.revision;
+    }
+
+    void apply_authored_spiral(AuthoredWorld& world) {
+        const std::size_t center_id = central_node(world);
+        double theta = 0.0;
+        for (std::size_t id : world.authored_order) {
+            WorldNode* node = world.find(id);
+            if (!node) continue;
+            if (id == center_id) {
+                node->planar = {};
+                node->extent = 43.0;
+                continue;
+            }
+            theta += 0.49;
+            node->planar = invoke_log_spiral(world, node->id, 24.0, 0.021, theta);
+            node->extent = node->parent == center_id ? 29.0 : 19.0;
+        }
+        ++world.revision;
+    }
+
+    void rotate_selection_givens(AuthoredWorld& world,
+                                 std::span<const std::size_t> selection,
+                                 double radians) {
+        // The operator assigned to the actual GIVENS body supplies an
+        // orthogonal plane rotation for every chosen authored point.
+        if (selection.empty()) return;
+        Vec2 pivot{};
+        std::size_t count{};
+        for (std::size_t id : selection) {
+            if (const WorldNode* node = world.find(id)) {
+                pivot = pivot + node->planar;
+                ++count;
+            }
+        }
+        if (count == 0) return;
+        pivot = pivot * (1.0 / static_cast<double>(count));
+        const auto rotation = invoke_givens(world, selection.front(),
+                                            std::cos(radians), -std::sin(radians));
+        for (std::size_t id : selection) {
+            if (WorldNode* node = world.find(id); node && !node->locked) {
+                const Vec2 relative = node->planar - pivot;
+                node->planar = pivot + Vec2{
+                    rotation[0] * relative.x + rotation[1] * relative.y,
+                    rotation[2] * relative.x + rotation[3] * relative.y};
+                node->rotation += radians;
+            }
+        }
+        ++world.revision;
+    }
+
+    void move_selection(AuthoredWorld& world,
+                        std::span<const std::size_t> selection,
+                        Vec2 authored_delta) {
+        // Ordinary translation moves the supplied unlocked authored points.
+        bool moved = false;
+        for (std::size_t id : selection) {
+            if (WorldNode* node = world.find(id); node && !node->locked) {
+                node->planar = node->planar + authored_delta;
+                moved = true;
+            }
+        }
+        if (moved) ++world.revision;
+    }
+
+    PlanarFrame compose(const AuthoredWorld& world, RectD viewport,
+                        std::span<const std::size_t> selection) const {
+        begin_portrayal_recomputation();
+        PlanarFrame frame;
+        frame.viewport = viewport;
+        frame.grid_spacing = purpose_grid_spacing();
+        frame.nodes.reserve(world.nodes.size());
+        frame.relations.reserve(world.relations.size());
+
+        for (const WorldRelation& relation : world.relations) {
+            const WorldNode* source = world.find(relation.source);
+            const WorldNode* target = world.find(relation.target);
+            if (!source || !target || !source->visible || !target->visible) continue;
+            const Vec2 start = camera_.world_to_screen(source->planar, viewport);
+            const Vec2 end = camera_.world_to_screen(target->planar, viewport);
+            const RectD expanded{viewport.x - 120.0, viewport.y - 120.0,
+                                 viewport.width + 240.0, viewport.height + 240.0};
+            if (!expanded.contains(start) && !expanded.contains(end)) continue;
+            frame.relations.push_back({relation.source, relation.target, start, end,
+                                       source->parent == no_node ? 1.35 : 1.0});
+        }
+
+        const std::size_t center_id = central_node(world);
+        for (const WorldNode& node : world.nodes) {
+            if (!node.visible) continue;
+            const Vec2 screen = camera_.world_to_screen(node.planar, viewport);
+            const double radius = std::clamp(node.extent * camera_.zoom, 4.0, 76.0);
+            const RectD expanded{viewport.x - radius, viewport.y - radius,
+                                 viewport.width + radius * 2.0,
+                                 viewport.height + radius * 2.0};
+            if (!expanded.contains(screen)) continue;
+            const bool is_selected = contains_id(selection, node.id);
+            const bool is_class = node.parent == center_id;
+            frame.nodes.push_back({node.id, node.catalog_index, screen, radius, detail_for(radius),
+                                   is_selected, node.id == center_id, is_class});
+        }
+        // The operator assigned to actual SIZE measures this finite visible set.
+        frame.visible_cardinality = invoke_cardinality(world, frame.nodes);
+        build_hutchinson_portrayal(world, frame);
+        frame.spatial_portal = make_spatial_portal(viewport, center_id);
+        return frame;
+    }
+
+    std::optional<std::size_t> hit_test(const AuthoredWorld& world, Vec2 screen,
+                                        RectD viewport) const {
+        std::optional<std::size_t> result;
+        double best_distance = std::numeric_limits<double>::max();
+        // Iterating back-to-front is ordinary portrayal order.
+        for (auto it = world.authored_order.rbegin(); it != world.authored_order.rend(); ++it) {
+            const WorldNode* node = world.find(*it);
+            if (!node || !node->visible) continue;
+            const Vec2 center = camera_.world_to_screen(node->planar, viewport);
+            const double distance = length(screen - center);
+            const double radius = std::clamp(node->extent * camera_.zoom, 7.0, 80.0);
+            if (distance <= radius + 5.0 && distance < best_distance) {
+                result = node->id;
+                best_distance = distance;
+            }
+        }
+        return result;
+    }
+
+    std::vector<std::size_t> region_attention(const AuthoredWorld& world,
+                                              RectD screen_region,
+                                              RectD viewport) const {
+        std::vector<std::size_t> result;
+        for (const WorldNode& node : world.nodes) {
+            if (!node.visible) continue;
+            if (screen_region.contains(camera_.world_to_screen(node.planar, viewport))) {
+                result.push_back(node.id);
+            }
+        }
+        return result;
+    }
+
+    void frame_all(const AuthoredWorld& world, RectD viewport) {
+        if (world.nodes.empty() || viewport.width <= 1.0 || viewport.height <= 1.0) return;
+        Vec2 minimum{std::numeric_limits<double>::max(), std::numeric_limits<double>::max()};
+        Vec2 maximum{std::numeric_limits<double>::lowest(), std::numeric_limits<double>::lowest()};
+        bool found = false;
+        for (const WorldNode& node : world.nodes) {
+            if (!node.visible) continue;
+            minimum.x = std::min(minimum.x, node.planar.x - node.extent);
+            minimum.y = std::min(minimum.y, node.planar.y - node.extent);
+            maximum.x = std::max(maximum.x, node.planar.x + node.extent);
+            maximum.y = std::max(maximum.y, node.planar.y + node.extent);
+            found = true;
+        }
+        if (!found) return;
+        camera_.center = (minimum + maximum) * 0.5;
+        const double world_width = std::max(1.0, maximum.x - minimum.x);
+        const double world_height = std::max(1.0, maximum.y - minimum.y);
+        camera_.zoom = std::clamp(std::min(viewport.width * 0.86 / world_width,
+                                           viewport.height * 0.86 / world_height),
+                                  camera_.minimum_zoom, camera_.maximum_zoom);
+    }
+
+private:
+    Camera2D camera_{};
+    LightRuntime* runtime_{};
+    std::int64_t spin_turn_{};
+    std::uint32_t fractal_stage_{3};
+    static constexpr std::uint32_t maximum_fractal_stage_{5};
+    mutable std::size_t last_visible_input_{std::numeric_limits<std::size_t>::max()};
+    mutable std::size_t last_visible_cardinality_{};
+    mutable std::optional<AppliedOperation> last_receipt_{};
+    mutable std::vector<AppliedOperation> pending_receipts_{};
+    mutable std::uint64_t discarded_receipts_{};
+    mutable LightRuntime portrayal_runtime_{};
+    mutable std::vector<AppliedOperation> portrayal_receipts_{};
+    mutable std::uint32_t cached_fractal_stage_{(std::numeric_limits<std::uint32_t>::max)()};
+    mutable Point2List cached_fractal_shape_{};
+    static constexpr std::size_t maximum_pending_receipts_{1024};
+
+    void record_receipt(AppliedOperation application) const {
+        if (pending_receipts_.size() >= maximum_pending_receipts_) {
+            pending_receipts_.erase(pending_receipts_.begin());
+            ++discarded_receipts_;
+        }
+        pending_receipts_.push_back(std::move(application));
+        last_receipt_ = pending_receipts_.back();
+    }
+
+    void begin_portrayal_recomputation() const {
+        portrayal_runtime_.clear();
+        portrayal_receipts_.clear();
+    }
+
+    std::optional<AuthoredInvocation> invoke_portrayal(
+        const AuthoredWorld& world, std::string_view unit,
+        std::vector<OperandDesignation> designations,
+        std::string consumer, std::string purpose) const {
+        try {
+            AuthoredInvocation invocation = invoke_authored_light(
+                world, portrayal_runtime_, unit, std::move(designations),
+                std::move(consumer), std::move(purpose));
+            constexpr std::size_t maximum_portrayal_receipts = 8;
+            if (portrayal_receipts_.size() >= maximum_portrayal_receipts) {
+                portrayal_receipts_.erase(portrayal_receipts_.begin());
+            }
+            portrayal_receipts_.push_back(invocation.application);
+            return invocation;
+        } catch (const std::exception&) {
+            return std::nullopt;
+        }
+    }
+
+    static OperandDesignation designate(const AuthoredWorld& world, Operand value,
+                                         std::string role, std::size_t node_id = no_node) {
+        std::optional<std::size_t> authored_node;
+        std::optional<Vec3> position;
+        if (const WorldNode* node = world.find(node_id)) {
+            authored_node = node->id;
+            position = Vec3{node->planar.x, node->planar.y, 0.0};
+        }
+        return {0, std::move(value), std::move(role), authored_node, position};
+    }
+
+    std::optional<AuthoredInvocation> invoke_rooted(
+        const AuthoredWorld& world, std::string_view unit,
+        std::vector<OperandDesignation> designations,
+        std::string consumer, std::string purpose) const {
+        if (!runtime_) return std::nullopt;
+        try {
+            AuthoredInvocation invocation = invoke_authored_light(
+                world, *runtime_, unit, std::move(designations),
+                std::move(consumer), std::move(purpose));
+            record_receipt(invocation.application);
+            return invocation;
+        } catch (const std::exception&) {
+            // A valid symbolic/exact runtime call is always attempted first.
+            // Ordinary geometry remains readable if a later domain contract is
+            // deliberately tightened during evolution.
+            return std::nullopt;
+        }
+    }
+
+    Vec2 invoke_log_spiral(const AuthoredWorld& world, std::size_t consumer_node,
+                           double a, double b, double theta) const {
+        if (const std::optional<AuthoredInvocation> invocation = invoke_rooted(
+                world, "SPIRALLY",
+                {designate(world, Operand::number(a), "initial radius", consumer_node),
+                 designate(world, Operand::number(b), "radial growth", consumer_node),
+                 designate(world, Operand::number(theta), "authored angle", consumer_node)},
+                "authored planar coordinate",
+                "apply SPIRALLY's assigned operator to the requested layout parameters")) {
+            if (invocation->invocation.value) {
+                if (const Vec2* point = std::get_if<Vec2>(&invocation->invocation.value->body)) {
+                    return *point;
+                }
+            }
+        }
+        return logarithmic_spiral(a, b, theta);
+    }
+
+    std::array<double, 5> invoke_givens(const AuthoredWorld& world,
+                                        std::size_t consumer_node,
+                                        double a, double b) const {
+        if (const std::optional<AuthoredInvocation> invocation = invoke_rooted(
+                world, "GIVENS",
+                {designate(world, Operand::number(a), "selected transform cosine", consumer_node),
+                 designate(world, Operand::number(b), "selected transform negative sine", consumer_node)},
+                "selected authored planar coordinates",
+                "apply GIVENS's assigned operator to the selected transform")) {
+            if (invocation->invocation.value) {
+                if (const NumberList* values = std::get_if<NumberList>(
+                        &invocation->invocation.value->body); values && values->size() >= 5) {
+                    return {(*values)[0], (*values)[1], (*values)[2],
+                            (*values)[3], (*values)[4]};
+                }
+            }
+        }
+        return givens_rotation(a, b);
+    }
+
+    std::size_t invoke_cardinality(const AuthoredWorld& world,
+                                   const std::vector<PlanarNode>& visible) const {
+        if (visible.size() == last_visible_input_) return last_visible_cardinality_;
+        last_visible_input_ = visible.size();
+        last_visible_cardinality_ = visible.size();
+        if (!runtime_) return last_visible_cardinality_;
+        NameList supplied_set;
+        supplied_set.reserve(visible.size());
+        for (const PlanarNode& view : visible) {
+            supplied_set.emplace_back(light_catalog[view.catalog_index].unit);
+        }
+        if (const std::optional<AuthoredInvocation> invocation = invoke_portrayal(
+                world, "SIZE",
+                {designate(world, Operand::names(std::move(supplied_set)),
+                           "visible authored Light names")},
+                "planar visible-cardinality portrayal",
+                "apply SIZE's assigned operator to the finite visible set")) {
+            if (invocation->invocation.value && invocation->invocation.value->numeric()) {
+                const double value = invocation->invocation.value->as_number();
+                if (value >= 0.0) last_visible_cardinality_ = static_cast<std::size_t>(value);
+            }
+        }
+        return last_visible_cardinality_;
+    }
+
+    static bool contains_id(std::span<const std::size_t> ids, std::size_t id) {
+        return std::find(ids.begin(), ids.end(), id) != ids.end();
+    }
+
+    static std::size_t central_node(const AuthoredWorld& world) {
+        for (const WorldNode& node : world.nodes) {
+            if (node.parent == no_node) return node.id;
+        }
+        return no_node;
+    }
+
+    PlanarDetail detail_for(double radius) const {
+        // FILTERAGE-style threshold portrayal on the supplied visual scale.
+        if (radius >= 18.0) return PlanarDetail::Function;
+        if (radius >= 9.0) return PlanarDetail::Name;
+        return PlanarDetail::Presence;
+    }
+
+    double purpose_grid_spacing() const {
+        const double target = 44.0 / camera_.zoom;
+        const double power = std::pow(2.0, std::floor(std::log2(std::max(target, 1.0))));
+        return power * camera_.zoom;
+    }
+
+    static PortalInto3D make_spatial_portal(RectD viewport, std::size_t route) {
+        const double width = std::clamp(viewport.width * 0.25, 150.0, 270.0);
+        const double height = width * 0.62;
+        return {{viewport.right() - width - 18.0, viewport.bottom() - height - 18.0,
+                 width, height}, route, 1, true};
+    }
+
+    void build_hutchinson_portrayal(const AuthoredWorld& world, PlanarFrame& frame) const {
+        if (fractal_stage_ == 0 || frame.viewport.width <= 1.0) return;
+        if (cached_fractal_stage_ != fractal_stage_) {
+            Point2List shape{{0.0, 0.0}, {1.0, 0.0}, {0.5, 0.8660254037844386}};
+            const Matrix maps{3, 6,
+                {0.5, 0.0, 0.0, 0.5, 0.0, 0.0,
+                 0.5, 0.0, 0.0, 0.5, 0.5, 0.0,
+                 0.5, 0.0, 0.0, 0.5, 0.25, 0.4330127018922193}};
+            const WorldNode* consumer = world.find_unit("FRACTALLY");
+            for (std::uint32_t stage = 0; stage < fractal_stage_; ++stage) {
+                const std::optional<AuthoredInvocation> invocation = invoke_portrayal(
+                    world, "FRACTALLY",
+                    {designate(world, Operand::points(shape), "current finite shape",
+                               consumer ? consumer->id : no_node),
+                     designate(world, Operand::matrix(maps), "three affine contraction maps",
+                               consumer ? consumer->id : no_node)},
+                    "bounded planar generated-stroke portrayal",
+                    "apply FRACTALLY's assigned Hutchinson operator for one requested finite stage");
+                if (!invocation || !invocation->invocation.value) break;
+                if (const Point2List* realized = std::get_if<Point2List>(
+                        &invocation->invocation.value->body)) {
+                    shape = *realized;
+                } else {
+                    break;
+                }
+            }
+            cached_fractal_shape_ = std::move(shape);
+            cached_fractal_stage_ = fractal_stage_;
+        }
+        const Point2List& shape = cached_fractal_shape_;
+        const Vec2 anchor{frame.viewport.x + 74.0, frame.viewport.bottom() - 66.0};
+        const double scale = 82.0;
+        frame.generated_strokes.reserve(shape.size());
+        for (std::size_t index = 0; index + 2 < shape.size(); index += 3) {
+            const Vec2 a = anchor + Vec2{(shape[index].x - 0.5) * scale,
+                                         (shape[index].y - 0.43) * -scale};
+            const Vec2 b = anchor + Vec2{(shape[index + 1].x - 0.5) * scale,
+                                         (shape[index + 1].y - 0.43) * -scale};
+            const Vec2 c = anchor + Vec2{(shape[index + 2].x - 0.5) * scale,
+                                         (shape[index + 2].y - 0.43) * -scale};
+            frame.generated_strokes.push_back({a, b, 0.16});
+            frame.generated_strokes.push_back({b, c, 0.16});
+            frame.generated_strokes.push_back({c, a, 0.16});
+        }
+    }
+};
+
+} // namespace milesing
+
+#endif // MILESING_2D_FRACTALIZER_INCLUDED

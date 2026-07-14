@@ -1,0 +1,132 @@
+LIGHT OPERATOR C++ WORKSPACE
+
+CONTRACT
+Each named unit remains the actual self-number body. Its assigned operator and mathematical-system origin are linked to that body. Every line below receives a genuine bounded finite C++ implementation and one domain-valid fixture operable through the actual authored unit tonight. Expression routes preserve larger composition and residual work; they never replace the individual operator.
+
+FORMAT
+UNIT | ASSIGNED OPERATOR | BOUNDED C++ WORK AND FIRST APP USE
+
+MY LIGHT | divinand | Produce the whole-work witness joining source unit, operands, result, purpose, portrayal, and recovery; validate every committed application.
+
+NIHILISM | sub | Subtract finite scalars, vectors, or equal-length sequences for coordinate and value difference.
+EMPTISM | is_empty | Test supported finite containers for no-hit, no-selection, and missing-part decisions.
+BINARISM | exclusive_or | Boolean exclusive-or for exact selection toggle.
+NULLISM | bottom | Construct the least domain value for an explicitly unavailable finite result.
+ZEROISM | zero | Construct exact integer zero as an algebraic starting value.
+ABSENTISM | logical_not | Negate a supplied truth value for command and logic work.
+CONTRADISM | both | Detect the both value in finite Belnap-Dunn logic and surface conflicting supplied evidence.
+DEATHISM | delete_vertex | Remove one vertex and every incident edge from a finite authored graph.
+CHAOSISM | rule30 | Apply the Rule 30 truth table to one three-cell neighborhood for bounded generation.
+CONISM | converse | Reverse every ordered pair in a finite authored relation.
+HELLISM | minimax_loss | Find the minimum row maximum of a finite payoff matrix for bounded worst-case plans.
+
+REALITY | add | Add finite scalars, vectors, or equal-length sequences for movement and value combination.
+INFINITY | recip_inf | Calculate reciprocal with the extended zero-to-infinity case.
+CHANGELY | forward_diff | Calculate one adjacent difference in an actual finite resize, signal, or time sequence.
+SELFIE | diagonal | Return the supplied value in both components of a diagonal map.
+HEAVENLY | box_all | Check a finite Kripke relation and supplied truth set at one world.
+GROWFLY | iterate | Apply a supplied finite relation/function or supported operation a bounded count.
+LOVELY | luk_or | Calculate min(1,a+b) on bounded fuzzy truth values.
+METHODICALLY | compose | Compose two finite functional relations or compatible expression routes.
+AUTHORIALLY | term | Construct a structured finite operator-and-arguments term.
+COMMANDSEA | action_prefix | Construct a finite action-before-process sequence.
+ACCELERATELY | aitken | Apply Aitken delta-squared acceleration to three finite values.
+
+INTIMACY | mul | Multiply finite scalars, vectors by scalars, or compatible values for scaling.
+RELIEF | erode | Erode a finite point/lattice set by supplied structuring offsets.
+CARE | shapley | Calculate one player's Shapley value from a finite coalition-value vector.
+SELVES | discrete_partition | Form singleton blocks from a finite supplied set.
+EDUCATION | bayes | Normalize finite prior-times-likelihood weights.
+FREEDOM | reduce_free | Cancel adjacent inverse letters in a finite free-group word.
+RESILIENCE | nearest_decode | Select the finite codeword of least Hamming distance.
+HOPE | snell | Backward-calculate a finite Snell envelope from gains and transition values.
+GENTLE | huber | Calculate quadratic/linear Huber loss.
+HIERARCHY | covers | Remove reflexive and transitive pairs from a finite order relation.
+COMMUNITY | concept_close | Calculate finite formal-concept closure from an object-attribute context.
+
+FUSING | mix | Reorder a finite sequence from an explicit retained chooser or permutation.
+STABILITY | lyap_residual | Calculate A-transpose P A minus P for finite matrices.
+CREATIVITY | l_system_step | Apply one finite parallel rewriting step.
+PUZZLER | exact_cover | Search a bounded binary incidence matrix for rows covering each column once.
+MEMORY | delay_k | Shift a finite sequence by k with supplied fill.
+NOVELTY | kl_div | Calculate finite Kullback-Leibler divergence with domain checks.
+RECIPROCITY | reciprocal | Calculate multiplicative inverse of a nonzero finite value.
+SPIRALLY | log_spiral | Calculate ae^(b theta)(cos theta,sin theta) from actual parameters while SPIRALLY remains the operator body.
+DESTINY | bellman_opt | Apply a finite max reward/value update.
+PRESENTLY | eval_at | Read a supplied finite function/sequence at the requested argument.
+PSYCHE | dft | Calculate the bounded discrete Fourier transform of a finite signal.
+
+DESIGNING | group | Retain one expression as an explicit grouped whole.
+EARTH CITY | voronoi | Construct bounded clipped nearest-site cells from finite points.
+PUBLICITY | gossip_step | Multiply a finite gossip matrix by supplied values.
+DIVERSITY | hill_diversity | Calculate a finite Hill diversity number.
+TIMELY | maxplus_mv | Calculate finite max-plus matrix-vector propagation.
+SAFETY | safe_gfp | Retain safe finite graph vertices whose successors remain safe.
+NATIVITY | offspring_pgf | Evaluate a finite offspring probability-generating function.
+FRACTALLY | hutchinson | Apply finite affine contractions to a finite shape and union the images.
+SHIFTY | cyclic_shift | Shift a finite authored order by k.
+RIGHTLY | right_adjoint | Find the greatest finite source whose monotone image is at most y.
+SCIENTIFICALLY | ols | Solve bounded normal equations with checked elimination.
+
+METHODOLOGIES | div | Divide finite scalars or compatible values by nonzero scalars.
+PLUGINS | operad_substitute | Substitute compatible expression routes into named finite tree slots.
+RECURSIONS | prim_rec | Evaluate bounded primitive recursion from base, step, and n.
+MEDITATIONS | prox | Evaluate declared bounded proximal cases such as L1, L2, and nonnegative projection.
+MOTIVATIONS | replicator_rhs | Calculate finite replicator dynamics from payoff and weights.
+TENSIONS | coboundary | Calculate oriented edge differences from finite vertex values.
+ORGANIZATIONS | union_sets | Merge two blocks in a finite partition.
+ARGUTIONS | cut_rule | Compose two finite sequents by removing the supplied cut formula.
+GIVENS | givens_rotation | Calculate plane-rotation coefficients from a supplied pair for actual transforms.
+FAIRINS | jain_fairness | Calculate Jain's finite nonnegative allocation index.
+EQUALINS | sinkhorn_step | Apply one finite positive row/column balancing step.
+
+PURPOSE | pow | Calculate bounded exponentiation with finite-result checks.
+BEST | pareto_front | Retain nondominated rows of a finite candidate matrix.
+JEST | involute | Apply a declared genuine finite involution such as additive inverse or complex conjugation.
+QUEST | astar_path | Find a least-cost path in a finite weighted graph with supplied heuristic values.
+SILENCE | kernel | Calculate a bounded null-space basis by checked row reduction.
+TEST | np_test | Compare finite log-likelihoods against a supplied threshold.
+DRESSED | conjugate | Apply finite group or complex conjugation in its supplied domain.
+CHEST | convex_hull | Calculate the finite planar convex hull.
+RESPECT | isotonic_fit | Calculate a finite order-constrained fit.
+TRUST | dempster_combine | Combine finite singleton mass assignments with conflict normalization.
+CREST | local_maxima | Return indices of finite local maxima.
+
+GROWING | growth | Apply one supported operation a bounded count while retaining residual expression.
+WISE | rule_of_succession | Calculate (successes+1)/(trials+2) with domain checks.
+CRIES | vector_norm | Calculate Euclidean norm of a finite vector.
+WHYS | preimage | Return finite sources whose supplied function relation lands in a target set.
+SCHIZIZE | spectral_bisect | Build a finite graph Laplacian and partition by a bounded Fiedler approximation.
+PRIZE | highest_bid | Return the maximum finite supplied bid.
+PERMISE | some_satisfy | Test a finite set against a declared supported predicate.
+WONDIZE | generating_poly | Evaluate a finite generating polynomial.
+LIES | kleene_not | Apply strong Kleene negation to true, false, or unknown.
+RISE | up_closure | Traverse a finite order from supplied seeds to every reachable greater element.
+SIZE | cardinality | Count a supported finite set or container.
+
+UNIVERSING | spin | Turn actual central classes and reorganize actual subclasses by a supplied turn.
+MEDIA | median3 | Return the median of three ordered finite values.
+NOIA | mahalanobis | Solve covariance distance for finite vectors and positive invertible covariance.
+FREEA | free_module | Construct a finite formal basis over a named ring.
+LOUDA | decibel | Calculate 10 log10(power/reference) for positive values.
+TRACKA | dtw_path | Calculate a bounded dynamic-time-warping alignment path.
+DOUBLABLA | doubling_map | Calculate 2x modulo 1.
+INMENUH | inclusion_exclusion | Calculate finite union cardinality from characteristic sets.
+NAMA | alpha_rename | Rename a bound name while preserving finite binding constraints.
+HOLA | holonomy_product | Multiply finite supplied transports, including bounded U(1) phases.
+CARA | face_map | Remove the requested vertex from a finite simplex.
+
+CEREMONIES | reverse | Reverse an actual finite authored sequence.
+MARRIAGE | stable_match | Run bounded Gale-Shapley matching on two finite preference matrices.
+DAMAGE | expected_loss | Calculate finite loss-times-probability sum.
+FILTERAGE | filtration_at | Retain finite cells whose supplied value is at most the threshold.
+COURTAGE | borda_count | Score finite rankings and return candidate totals or order.
+PROMAGE | eventually | Check whether a finite trace eventually satisfies a declared predicate.
+BIRTHAGE | poisson_birth | Calculate the bounded Poisson count probability.
+HOMAGE | homology | Row-reduce finite boundary matrices over GF(2) and return homology dimension.
+OUTAGE | outage_probability | Calculate one minus supplied reliability.
+ALLAGE | fold_all | Fold a finite sequence under a declared associative operation and unit.
+SURRAGE | surreal_cut | Validate finite left/right cuts and construct a simplest bounded dyadic between them.
+
+TANDEM EVOLUTION
+The first app invokes one unit at a time with domain-valid operands and keeps its exact result or checked domain error. ExpressionRoute values already nest as operands. Deeper composition grows through AUTHORIALLY term, DESIGNING group, METHODICALLY compose, PLUGINS operad_substitute, RECURSIONS prim_rec, GROWFLY iterate, and GROWING growth under finite work bounds, receipts, and bug tests.

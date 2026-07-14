@@ -1,0 +1,1186 @@
+#define UNICODE
+#define _UNICODE
+#define NOMINMAX
+#define WIN32_LEAN_AND_MEAN
+#define _WIN32_WINNT 0x0A00
+
+#include <windows.h>
+#include <windowsx.h>
+#include <imm.h>
+#include <shobjidl.h>
+#include <wrl/client.h>
+#include <d3d11.h>
+#include <dxgi1_2.h>
+#include <d2d1_1.h>
+#include <d2d1helper.h>
+#include <dwrite.h>
+#include <wincodec.h>
+#include <uiautomationcore.h>
+#include <bcrypt.h>
+#include <pathcch.h>
+#include <psapi.h>
+
+#include <algorithm>
+#include <array>
+#include <atomic>
+#include <bit>
+#include <chrono>
+#include <cctype>
+#include <cmath>
+#include <complex>
+#include <cstdio>
+#include <cstdint>
+#include <filesystem>
+#include <fstream>
+#include <functional>
+#include <iomanip>
+#include <iterator>
+#include <limits>
+#include <locale>
+#include <memory>
+#include <mutex>
+#include <numeric>
+#include <optional>
+#include <random>
+#include <span>
+#include <sstream>
+#include <stdexcept>
+#include <string>
+#include <string_view>
+#include <thread>
+#include <type_traits>
+#include <unordered_map>
+#include <utility>
+#include <variant>
+#include <vector>
+
+#pragma comment(lib, "user32.lib")
+#pragma comment(lib, "gdi32.lib")
+#pragma comment(lib, "ole32.lib")
+#pragma comment(lib, "oleaut32.lib")
+#pragma comment(lib, "comdlg32.lib")
+#pragma comment(lib, "imm32.lib")
+#pragma comment(lib, "shell32.lib")
+#pragma comment(lib, "pathcch.lib")
+#pragma comment(lib, "bcrypt.lib")
+#pragma comment(lib, "d3d11.lib")
+#pragma comment(lib, "dxgi.lib")
+#pragma comment(lib, "d2d1.lib")
+#pragma comment(lib, "dwrite.lib")
+#pragma comment(lib, "windowscodecs.lib")
+#pragma comment(lib, "d3dcompiler.lib")
+#pragma comment(lib, "uiautomationcore.lib")
+
+// One native C++20 translation unit.  These are the existing authored source
+// bodies in dependency order; no reference application or outside runtime is
+// smuggled into the architecture.
+#include "SUPPORT.txt"
+#include "SYSTEMLOGS.txt"
+#include "2DFRACTALIZER.txt"
+#include "3DFRACTALIZER.txt"
+#include "EDITOR.txt"
+#include "RENDERER.txt"
+
+namespace milesing {
+
+class NativeApplication final {
+public:
+    NativeApplication()
+        : system_association_(SystemParticipation::synthetic_fixture(
+              editor_.world(), system_runtime_, Vec3{0.0, 0.0, 0.0})) {}
+
+    NativeApplication(const NativeApplication&) = delete;
+    NativeApplication& operator=(const NativeApplication&) = delete;
+
+    bool create(HINSTANCE instance, int show_command) {
+        instance_ = instance;
+        WNDCLASSEXW window_class{};
+        window_class.cbSize = sizeof(window_class);
+        window_class.style = CS_DBLCLKS;
+        window_class.lpfnWndProc = &NativeApplication::window_entry;
+        window_class.hInstance = instance_;
+        window_class.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+        window_class.lpszClassName = L"MilesingLightNativeWindow";
+        if (!RegisterClassExW(&window_class) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) return false;
+
+        constexpr DWORD style = WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN | WS_CLIPSIBLINGS;
+        RECT desired{0, 0, 1500, 920};
+        AdjustWindowRectExForDpi(&desired, style, FALSE, 0, 96);
+        window_ = CreateWindowExW(
+            0, window_class.lpszClassName, L"Milesing · My Light",
+            style, CW_USEDEFAULT, CW_USEDEFAULT, desired.right - desired.left,
+            desired.bottom - desired.top, nullptr, nullptr, instance_, this);
+        if (!window_) return false;
+        ShowWindow(window_, show_command);
+        UpdateWindow(window_);
+        return true;
+    }
+
+    int run() {
+        MSG message{};
+        while (true) {
+            const BOOL result = GetMessageW(&message, nullptr, 0, 0);
+            if (result == 0) return static_cast<int>(message.wParam);
+            if (result < 0) return 1;
+            TranslateMessage(&message);
+            DispatchMessageW(&message);
+        }
+    }
+
+private:
+    static LRESULT CALLBACK window_entry(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
+        NativeApplication* self = reinterpret_cast<NativeApplication*>(
+            GetWindowLongPtrW(window, GWLP_USERDATA));
+        if (message == WM_NCCREATE) {
+            const auto* create = reinterpret_cast<const CREATESTRUCTW*>(lparam);
+            self = static_cast<NativeApplication*>(create->lpCreateParams);
+            self->window_ = window;
+            SetWindowLongPtrW(window, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(self));
+        }
+        return self ? self->window_proc(message, wparam, lparam)
+                    : DefWindowProcW(window, message, wparam, lparam);
+    }
+
+    LRESULT window_proc(UINT message, WPARAM wparam, LPARAM lparam) {
+        switch (message) {
+        case WM_CREATE:
+            return on_create() ? 0 : -1;
+        case WM_GETMINMAXINFO: {
+            auto* limits = reinterpret_cast<MINMAXINFO*>(lparam);
+            limits->ptMinTrackSize = {960, 620};
+            return 0;
+        }
+        case WM_DPICHANGED: {
+            dpi_ = static_cast<float>(HIWORD(wparam));
+            renderer_.set_dpi(dpi_);
+            const auto* proposed = reinterpret_cast<const RECT*>(lparam);
+            SetWindowPos(window_, nullptr, proposed->left, proposed->top,
+                         proposed->right - proposed->left, proposed->bottom - proposed->top,
+                         SWP_NOACTIVATE | SWP_NOZORDER);
+            mark_frame_changed();
+            return 0;
+        }
+        case WM_SIZE:
+            on_resize(LOWORD(lparam), HIWORD(lparam));
+            return 0;
+        case WM_PAINT:
+            on_paint();
+            return 0;
+        case WM_ERASEBKGND:
+            return 1;
+        case WM_LBUTTONDOWN:
+            on_pointer_down(PointerButton::Left, lparam);
+            return 0;
+        case WM_MBUTTONDOWN:
+            on_pointer_down(PointerButton::Middle, lparam);
+            return 0;
+        case WM_RBUTTONDOWN:
+            on_pointer_down(PointerButton::Right, lparam);
+            return 0;
+        case WM_LBUTTONUP:
+        case WM_MBUTTONUP:
+        case WM_RBUTTONUP:
+            on_pointer_up(lparam);
+            return 0;
+        case WM_MOUSEMOVE:
+            on_pointer_move(lparam);
+            return 0;
+        case WM_MOUSEWHEEL:
+            on_pointer_wheel(wparam, lparam);
+            return 0;
+        case WM_KEYDOWN:
+        case WM_SYSKEYDOWN:
+            on_key(static_cast<UINT>(wparam), lparam);
+            return 0;
+        case WM_TIMER:
+            on_timer();
+            return 0;
+        case WM_DISPLAYCHANGE:
+            mark_frame_changed();
+            return 0;
+        case WM_CLOSE:
+            on_close();
+            return 0;
+        case WM_DESTROY:
+            KillTimer(window_, animation_timer);
+            PostQuitMessage(0);
+            return 0;
+        default:
+            return DefWindowProcW(window_, message, wparam, lparam);
+        }
+    }
+
+    bool on_create() {
+        dpi_ = static_cast<float>(GetDpiForWindow(window_));
+        RECT client{};
+        GetClientRect(window_, &client);
+        if (!renderer_.initialize(window_, static_cast<std::uint32_t>(client.right),
+                                  static_cast<std::uint32_t>(client.bottom), dpi_)) {
+            return false;
+        }
+        last_tick_ = std::chrono::steady_clock::now();
+        update_selection_cardinality(true);
+        dirty_ = false;
+        persistence_status_ = "Ctrl+O open · Ctrl+S save · Ctrl+Shift+S save as · explicit local files only";
+        update_window_title();
+        update_animation_timer();
+        return true;
+    }
+
+    void on_resize(std::uint32_t width, std::uint32_t height) {
+        if (width > 0) {
+            const double logical_width = static_cast<double>(width) / (dpi_ / 96.0);
+            if (resize_widths_.empty() || resize_widths_.back() != logical_width) {
+                resize_widths_.push_back(logical_width);
+                if (resize_widths_.size() > maximum_resize_trace) resize_widths_.erase(resize_widths_.begin());
+                if (resize_widths_.size() >= 2) {
+                    resize_runtime_.clear();
+                    const std::int64_t difference_index =
+                        static_cast<std::int64_t>(resize_widths_.size() - 2);
+                    AuthoredInvocation change = invoke_authored_light(
+                        editor_.world(), resize_runtime_, "CHANGELY",
+                        {{0, Operand::numbers(resize_widths_), "finite native client-width trace", std::nullopt, std::nullopt},
+                         {1, Operand::integer(difference_index), "latest adjacent resize position", std::nullopt, std::nullopt}},
+                        "APP WM_SIZE layout scheduling",
+                        "measure the supplied adjacent window-width change and expose it to portrayal and status");
+                    if (change.invocation.value && change.invocation.value->numeric()) {
+                        resize_change_ = change.invocation.value->as_number();
+                    }
+                    resize_application_ = std::move(change.application);
+                }
+            }
+        }
+        if (!renderer_.resize(width, height, dpi_)) {
+            last_error_ = "the native graphics target could not complete this resize; the next visible frame will retry device creation";
+            renderer_.invalidate_plan();
+        }
+        mark_frame_changed();
+    }
+
+    void on_paint() {
+        PAINTSTRUCT paint{};
+        BeginPaint(window_, &paint);
+        try {
+            render_frame();
+        } catch (const std::exception& error) {
+            last_error_ = error.what();
+        }
+        EndPaint(window_, &paint);
+    }
+
+    void render_frame() {
+        if (renderer_.occluded()) {
+            if (renderer_.test_visible()) InvalidateRect(window_, nullptr, FALSE);
+            return;
+        }
+        update_selection_cardinality(false);
+
+        const D2D1_SIZE_F size = renderer_.logical_size();
+        const RectD client{0.0, 0.0, size.width, size.height};
+        const EditorLayout layout = editor_.layout(client);
+        const RectD viewport = layout.canvas;
+        const NameList admitted = admitted_body_names();
+        const NumberList allocations = actual_pass_allocations();
+        const Matrix dependencies = actual_pass_dependencies(allocations.size());
+        const std::uint64_t plan_revision = (editor_.world().revision * 1099511628211ull) ^ frame_cause_;
+        const PortrayalPlan& plan = renderer_.plan_frame(
+            editor_.runtime(), editor_.world(), plan_revision, admitted, allocations, dependencies);
+
+        if (!renderer_.begin_frame({0.018f, 0.024f, 0.058f, 1.0f})) {
+            last_error_ = "the native graphics frame could not begin";
+            return;
+        }
+        try {
+            switch (editor_.workspace()) {
+            case Workspace::MyLight:
+            case Workspace::Fractal2D: {
+                const PlanarFrame frame = editor_.planar_frame(viewport);
+                renderer_.draw_planar_world(editor_.world(), frame, plan);
+                break;
+            }
+            case Workspace::Fractal3D: {
+                const SpatialFrame frame = editor_.spatial_frame(viewport);
+                renderer_.draw_spatial_world(editor_.world(), frame, plan);
+                break;
+            }
+            case Workspace::Operations:
+                renderer_.draw_operations(viewport, editor_.active_operation_draft(),
+                                          editor_.applied_operations().size(),
+                                          editor_.discarded_applied_operations());
+                break;
+            case Workspace::TimeMedia:
+                renderer_.draw_time_media(viewport, editor_.runtime(), timeline_phase());
+                break;
+            case Workspace::SystemRelation:
+                renderer_.draw_system_relation(viewport, system_association_);
+                break;
+            }
+
+            const std::wstring workspace = utf8_to_wide(editor_.workspace_name());
+            const std::wstring status = status_line();
+            renderer_.draw_shell(editor_.world(), editor_.selection(),
+                                 static_cast<std::size_t>(editor_.workspace()), workspace, status,
+                                 editor_.runtime(), system_association_, resize_change_, timeline_phase());
+            const FrameCompletion completion = renderer_.end_frame();
+            if (completion == FrameCompletion::Failed) {
+                throw std::runtime_error("the native graphics frame could not complete");
+            }
+            if (completion == FrameCompletion::Recovered) mark_frame_changed();
+        } catch (...) {
+            renderer_.abort_frame();
+            throw;
+        }
+    }
+
+    void on_pointer_down(PointerButton button, LPARAM lparam) {
+        const Vec2 point = pointer_from_client(lparam);
+        const RectD client = client_bounds();
+        const AuthoredSignal before = authored_signal();
+        begin_command("pointer attention", "route one direct pointer intention through the shared editor command body");
+
+        const bool changed = editor_.pointer_down(point, button, pointer_modifiers(), client);
+        SetCapture(window_);
+        if (changed) {
+            note_authored_change(before);
+            mark_frame_changed();
+        }
+        update_selection_cardinality(false);
+        update_animation_timer();
+    }
+
+    void on_pointer_move(LPARAM lparam) {
+        const AuthoredSignal before = authored_signal();
+        const bool changed = editor_.pointer_move(pointer_from_client(lparam), client_bounds());
+        if (changed) {
+            note_authored_change(before);
+            mark_frame_changed();
+        }
+    }
+
+    void on_pointer_up(LPARAM lparam) {
+        const AuthoredSignal before = authored_signal();
+        const bool changed = editor_.pointer_up(pointer_from_client(lparam), client_bounds());
+        if (GetCapture() == window_) ReleaseCapture();
+        if (changed) {
+            note_authored_change(before);
+            mark_frame_changed();
+        }
+        update_selection_cardinality(false);
+    }
+
+    void on_pointer_wheel(WPARAM wparam, LPARAM lparam) {
+        POINT screen{GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)};
+        ScreenToClient(window_, &screen);
+        const double factor = 96.0 / dpi_;
+        const Vec2 point{screen.x * factor, screen.y * factor};
+        const double steps = static_cast<double>(GET_WHEEL_DELTA_WPARAM(wparam)) /
+                             static_cast<double>(WHEEL_DELTA);
+        const AuthoredSignal before = authored_signal();
+        begin_command("camera wheel", "apply one finite pointer-wheel movement to the active authored camera");
+        if (editor_.pointer_wheel(point, steps, client_bounds())) {
+            note_authored_change(before);
+            mark_frame_changed();
+        }
+    }
+
+    void on_key(UINT key, LPARAM key_information) {
+        if (key == VK_F4 && key_down(VK_MENU)) {
+            on_close();
+            return;
+        }
+        if (key == 'S' && key_down(VK_CONTROL) && !key_down(VK_MENU)) {
+            if ((static_cast<std::uint64_t>(key_information) & (std::uint64_t{1} << 30)) != 0) return;
+            const bool save_as = key_down(VK_SHIFT) || workspace_path_.empty();
+            (void)save_workspace(save_as);
+            return;
+        }
+        if (key == 'O' && key_down(VK_CONTROL) && !key_down(VK_MENU)) {
+            if ((static_cast<std::uint64_t>(key_information) & (std::uint64_t{1} << 30)) != 0) return;
+            (void)open_workspace();
+            return;
+        }
+        const AuthoredSignal before = authored_signal();
+        begin_command("key " + std::to_string(key),
+                      "apply one semantic keyboard command to the current encounter of the shared world");
+        if (editor_.key_down(key, key_down(VK_CONTROL), key_down(VK_SHIFT), key_down(VK_MENU),
+                             client_bounds())) {
+            note_authored_change(before);
+            mark_frame_changed();
+            update_selection_cardinality(false);
+        }
+        update_animation_timer();
+    }
+
+    void on_timer() {
+        const auto now = std::chrono::steady_clock::now();
+        const double seconds = std::chrono::duration<double>(now - last_tick_).count();
+        last_tick_ = now;
+        editor_.tick((std::min)(seconds, 0.1));
+        mark_frame_changed(false);
+    }
+
+    void begin_command(std::string action, std::string purpose) {
+        command_runtime_.clear();
+        NameList process{"receive one Win32 message",
+                         "apply one semantic editor command",
+                         "request one shared-work portrayal"};
+        AuthoredInvocation prefixed = invoke_authored_light(
+            editor_.world(), command_runtime_, "COMMANDSEA",
+            {{0, Operand::text(std::move(action)), "actual semantic action", std::nullopt, std::nullopt},
+             {1, Operand::names(std::move(process)), "following bounded local process",
+              std::nullopt, std::nullopt}},
+            "APP WndProc semantic dispatch", std::move(purpose));
+        if (!prefixed.invocation.value) {
+            throw std::logic_error("COMMANDSEA did not produce its bounded prefixed process");
+        }
+        AuthoredInvocation grouped = invoke_authored_light(
+            editor_.world(), command_runtime_, "DESIGNING",
+            {{0, *prefixed.invocation.value, "exact COMMANDSEA prefixed process",
+              std::nullopt, std::nullopt}},
+            "APP command receipt",
+            "retain one platform event and its semantic command as a complete operative whole");
+        if (!grouped.invocation.value) {
+            throw std::logic_error("DESIGNING did not retain the complete prefixed process");
+        }
+        command_result_ = grouped.invocation.value;
+        command_application_ = std::move(grouped.application);
+    }
+
+    enum class SaveResult { Saved, Cancelled, Failed };
+
+    struct AuthoredSignal {
+        std::uint64_t world_revision{};
+        std::size_t applied_count{};
+        std::optional<std::size_t> latest_expression{};
+
+        friend bool operator==(const AuthoredSignal&, const AuthoredSignal&) = default;
+    };
+
+    AuthoredSignal authored_signal() const {
+        std::optional<std::size_t> latest_expression;
+        if (editor_.latest_receipt()) latest_expression = editor_.latest_receipt()->expression.value;
+        return {editor_.world().revision, editor_.applied_operations().size(), latest_expression};
+    }
+
+    void note_authored_change(const AuthoredSignal& before) {
+        if (before == authored_signal() || dirty_) return;
+        dirty_ = true;
+        update_window_title();
+    }
+
+    std::optional<std::filesystem::path> choose_workspace_path() {
+        Microsoft::WRL::ComPtr<IFileSaveDialog> dialog;
+        HRESULT result = CoCreateInstance(CLSID_FileSaveDialog, nullptr, CLSCTX_INPROC_SERVER,
+                                          IID_PPV_ARGS(&dialog));
+        if (FAILED(result)) throw std::runtime_error("the native Save As dialog could not be created");
+
+        DWORD options{};
+        if (FAILED(dialog->GetOptions(&options)) ||
+            FAILED(dialog->SetOptions(options | FOS_FORCEFILESYSTEM | FOS_PATHMUSTEXIST |
+                                      FOS_OVERWRITEPROMPT | FOS_NOCHANGEDIR |
+                                      FOS_DONTADDTORECENT | FOS_STRICTFILETYPES))) {
+            throw std::runtime_error("the native Save As privacy and filesystem options could not be set");
+        }
+        static constexpr COMDLG_FILTERSPEC types[] = {
+            {L"Milesing Light workspace (*.mlight)", L"*.mlight"},
+            {L"All files (*.*)", L"*.*"}
+        };
+        if (FAILED(dialog->SetFileTypes(static_cast<UINT>(std::size(types)), types)) ||
+            FAILED(dialog->SetFileTypeIndex(1)) ||
+            FAILED(dialog->SetDefaultExtension(L"mlight"))) {
+            throw std::runtime_error("the Milesing Light workspace file type could not be set");
+        }
+        const std::wstring proposed_name = workspace_path_.empty()
+            ? L"My Light.mlight" : workspace_path_.filename().wstring();
+        if (FAILED(dialog->SetFileName(proposed_name.c_str()))) {
+            throw std::runtime_error("the native Save As name could not be set");
+        }
+
+        result = dialog->Show(window_);
+        if (result == HRESULT_FROM_WIN32(ERROR_CANCELLED)) return std::nullopt;
+        if (FAILED(result)) throw std::runtime_error("the native Save As dialog did not return a local path");
+
+        Microsoft::WRL::ComPtr<IShellItem> item;
+        if (FAILED(dialog->GetResult(&item))) {
+            throw std::runtime_error("the native Save As result could not be read");
+        }
+        PWSTR raw_path{};
+        if (FAILED(item->GetDisplayName(SIGDN_FILESYSPATH, &raw_path)) || !raw_path) {
+            throw std::runtime_error("the Save As result was not a filesystem path");
+        }
+        std::filesystem::path chosen;
+        try {
+            chosen = raw_path;
+            CoTaskMemFree(raw_path);
+        } catch (...) {
+            CoTaskMemFree(raw_path);
+            throw;
+        }
+        return chosen;
+    }
+
+    std::optional<std::filesystem::path> choose_workspace_to_open() {
+        Microsoft::WRL::ComPtr<IFileOpenDialog> dialog;
+        HRESULT result = CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER,
+                                          IID_PPV_ARGS(&dialog));
+        if (FAILED(result)) throw std::runtime_error("the native Open dialog could not be created");
+
+        DWORD options{};
+        if (FAILED(dialog->GetOptions(&options)) ||
+            FAILED(dialog->SetOptions(options | FOS_FORCEFILESYSTEM | FOS_FILEMUSTEXIST |
+                                      FOS_PATHMUSTEXIST | FOS_NOCHANGEDIR |
+                                      FOS_DONTADDTORECENT | FOS_STRICTFILETYPES |
+                                      FOS_NODEREFERENCELINKS))) {
+            throw std::runtime_error("the native Open privacy and filesystem options could not be set");
+        }
+        static constexpr COMDLG_FILTERSPEC types[] = {
+            {L"Milesing Light workspace (*.mlight)", L"*.mlight"},
+            {L"All files (*.*)", L"*.*"}
+        };
+        if (FAILED(dialog->SetFileTypes(static_cast<UINT>(std::size(types)), types)) ||
+            FAILED(dialog->SetFileTypeIndex(1)) ||
+            FAILED(dialog->SetDefaultExtension(L"mlight"))) {
+            throw std::runtime_error("the Milesing Light Open file type could not be set");
+        }
+
+        result = dialog->Show(window_);
+        if (result == HRESULT_FROM_WIN32(ERROR_CANCELLED)) return std::nullopt;
+        if (FAILED(result)) throw std::runtime_error("the native Open dialog did not return a local path");
+
+        Microsoft::WRL::ComPtr<IShellItem> item;
+        if (FAILED(dialog->GetResult(&item))) {
+            throw std::runtime_error("the native Open result could not be read");
+        }
+        PWSTR raw_path{};
+        if (FAILED(item->GetDisplayName(SIGDN_FILESYSPATH, &raw_path)) || !raw_path) {
+            throw std::runtime_error("the Open result was not a filesystem path");
+        }
+        std::filesystem::path chosen;
+        try {
+            chosen = raw_path;
+            CoTaskMemFree(raw_path);
+        } catch (...) {
+            CoTaskMemFree(raw_path);
+            throw;
+        }
+        return chosen;
+    }
+
+    bool permit_workspace_replacement() {
+        if (!dirty_) return true;
+        const int answer = MessageBoxW(
+            window_,
+            L"The current authored work has unsaved changes.\n\n"
+            L"Yes: save explicitly, then choose a workspace to open\n"
+            L"No: keep it in memory until a different workspace is successfully opened\n"
+            L"Cancel: keep working",
+            L"Milesing · My Light — open another workspace",
+            MB_YESNOCANCEL | MB_ICONWARNING | MB_DEFBUTTON3);
+        if (answer == IDCANCEL || answer == 0) return false;
+        return answer != IDYES || save_workspace(workspace_path_.empty()) == SaveResult::Saved;
+    }
+
+    bool open_workspace() noexcept {
+        bool adopted = false;
+        try {
+            if (!permit_workspace_replacement()) {
+                persistence_status_ = "open cancelled — current authored work remains live";
+                mark_frame_changed(false);
+                return false;
+            }
+            const auto chosen = choose_workspace_to_open();
+            if (!chosen) {
+                persistence_status_ = "Open cancelled — current authored work remains live";
+                mark_frame_changed(false);
+                return false;
+            }
+
+            const WorkspaceParseLimits limits{};
+            const std::string body = read_local_text(*chosen, limits.maximum_bytes);
+            WorkspaceParseResult parsed = parse_canonical_workspace(body, limits);
+            if (!parsed || !parsed.workspace) {
+                std::ostringstream detail;
+                detail << "workspace validation held";
+                if (parsed.line) detail << " at line " << parsed.line;
+                if (!parsed.error.empty()) detail << ": " << parsed.error;
+                throw std::runtime_error(detail.str());
+            }
+
+            // Prepare every allocating or realizing ancillary body against the
+            // parsed candidate before the one live Editor adoption point.
+            std::filesystem::path replacement_path = *chosen;
+            std::string replacement_hash = sha256_hex(body);
+            std::string replacement_status =
+                "opened exact canonical local workspace · SHA-256 " + replacement_hash;
+            std::wstring replacement_title = L"Milesing · My Light — " +
+                replacement_path.filename().wstring();
+
+            LightRuntime replacement_system_runtime{16};
+            SpatialSystemAssociation replacement_system_association =
+                SystemParticipation::synthetic_fixture(
+                    parsed.workspace->world, replacement_system_runtime, Vec3{0.0, 0.0, 0.0});
+
+            NameList selected_names;
+            selected_names.reserve(parsed.workspace->attention.size());
+            std::uint64_t replacement_selection_signature = 1469598103934665603ull;
+            for (const std::size_t id : parsed.workspace->attention) {
+                const WorldNode* node = parsed.workspace->world.find(id);
+                if (!node || node->catalog_index >= light_catalog.size()) {
+                    throw std::logic_error("validated attention lost its authored Light body route");
+                }
+                selected_names.emplace_back(light_catalog[node->catalog_index].unit);
+                replacement_selection_signature ^= static_cast<std::uint64_t>(id);
+                replacement_selection_signature *= 1099511628211ull;
+            }
+            replacement_selection_signature ^= static_cast<std::uint64_t>(Workspace::MyLight);
+            LightRuntime replacement_selection_runtime{4};
+            AuthoredInvocation replacement_size = invoke_authored_light(
+                parsed.workspace->world, replacement_selection_runtime, "SIZE",
+                {{0, Operand::names(std::move(selected_names)),
+                  "actual attended Light body names", std::nullopt, std::nullopt}},
+                "APP restored selection and workspace status",
+                "calculate the cardinality of exactly the bodies restored into attention");
+            std::size_t replacement_selection_count = parsed.workspace->attention.size();
+            if (replacement_size.invocation.value && replacement_size.invocation.value->numeric()) {
+                replacement_selection_count = static_cast<std::size_t>((std::max)(
+                    0.0, replacement_size.invocation.value->as_number()));
+            }
+
+            std::string adoption_error;
+            if (!editor_.restore_workspace(std::move(*parsed.workspace), adoption_error)) {
+                throw std::runtime_error(adoption_error.empty()
+                    ? "the validated workspace could not be adopted atomically"
+                    : adoption_error);
+            }
+            adopted = true;
+
+            static_assert(std::is_nothrow_move_assignable_v<LightRuntime>);
+            static_assert(std::is_nothrow_move_assignable_v<SpatialSystemAssociation>);
+            static_assert(std::is_nothrow_move_assignable_v<std::filesystem::path>);
+            static_assert(std::is_nothrow_move_assignable_v<std::string>);
+            system_runtime_ = std::move(replacement_system_runtime);
+            system_association_ = std::move(replacement_system_association);
+            command_runtime_.clear();
+            resize_runtime_.clear();
+            selection_runtime_ = std::move(replacement_selection_runtime);
+            command_application_.reset();
+            command_result_.reset();
+            resize_application_.reset();
+            selection_application_ = std::move(replacement_size.application);
+            resize_widths_.clear();
+            resize_change_ = 0.0;
+            selection_count_ = replacement_selection_count;
+            selection_signature_ = replacement_selection_signature;
+            workspace_path_ = std::move(replacement_path);
+            committed_sha256_ = std::move(replacement_hash);
+            dirty_ = false;
+            last_error_.clear();
+            persistence_status_ = std::move(replacement_status);
+            SetWindowTextW(window_, replacement_title.c_str());
+            update_animation_timer();
+            mark_frame_changed();
+            return true;
+        } catch (const std::exception& error) {
+            last_error_ = std::string(adopted
+                ? "workspace opened, but a post-adoption application update held: "
+                : "open held; current authored work remains live: ") + error.what();
+            persistence_status_ = adopted
+                ? "workspace adopted — one ancillary application update needs attention"
+                : "open failed safely — no validated workspace replacement accepted";
+            std::wstring message = adopted
+                ? L"The selected local workspace was validated and adopted, but a following application update did not complete. The opened authored work remains live.\n\n"
+                : L"The selected local workspace was not opened. The current authored work remains live and unchanged.\n\n";
+            try { message += utf8_to_wide(error.what()); }
+            catch (...) { message += L"A bounded local-open error occurred."; }
+            MessageBoxW(window_, message.c_str(), adopted
+                            ? L"Milesing · My Light — opened with held update"
+                            : L"Milesing · My Light — open held",
+                        MB_OK | MB_ICONERROR);
+            mark_frame_changed(false);
+            return false;
+        }
+    }
+
+    bool allow_changed_target(const std::filesystem::path& target) {
+        if (workspace_path_.empty() || target != workspace_path_ || committed_sha256_.empty()) return true;
+        std::error_code error;
+        const bool exists = std::filesystem::is_regular_file(target, error);
+        if (error || !exists) {
+            const int answer = MessageBoxW(
+                window_,
+                L"The previously saved workspace is no longer present at its local path.\n\n"
+                L"Recreate it from the current authored work?",
+                L"Milesing · My Light — local file changed", MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2);
+            return answer == IDYES;
+        }
+        try {
+            const std::string disk_body = read_local_text(target);
+            if (sha256_hex(disk_body) == committed_sha256_) return true;
+        } catch (const std::exception&) {
+            const int answer = MessageBoxW(
+                window_,
+                L"The previously saved local workspace cannot be verified within the bounded reader.\n\n"
+                L"Replace it with the current authored work? The existing body will be retained as a recoverable prior file when Windows permits replacement.",
+                L"Milesing · My Light — target cannot be verified",
+                MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2);
+            return answer == IDYES;
+        }
+        const int answer = MessageBoxW(
+            window_,
+            L"This local workspace changed outside the application after the last save.\n\n"
+            L"Replace it with the current authored work? The existing body will be retained as a recoverable prior file.",
+            L"Milesing · My Light — external change", MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2);
+        return answer == IDYES;
+    }
+
+    SaveResult save_workspace(bool save_as) noexcept {
+        bool commit_returned = false;
+        try {
+            std::filesystem::path target = workspace_path_;
+            if (save_as || target.empty()) {
+                const auto chosen = choose_workspace_path();
+                if (!chosen) {
+                    persistence_status_ = "Save As cancelled — no local bytes written";
+                    mark_frame_changed(false);
+                    return SaveResult::Cancelled;
+                }
+                target = *chosen;
+            } else if (!allow_changed_target(target)) {
+                persistence_status_ = "save held — changed local target left untouched";
+                mark_frame_changed(false);
+                return SaveResult::Cancelled;
+            }
+
+            const WriteReceipt receipt = write_workspace_recoverably(
+                target, editor_.world(), editor_.runtime(), editor_.applied_operations(), editor_.selection());
+            commit_returned = true;
+            workspace_path_ = receipt.final_path;
+            committed_sha256_ = receipt.sha256;
+            const std::string reopened = read_local_text(receipt.final_path, receipt.bytes + 1);
+            if (!receipt.reopened_equal || !receipt.reopened_hash_equal ||
+                !receipt.reopened_canonical ||
+                receipt.sha256 != sha256_hex(reopened)) {
+                dirty_ = true;
+                update_window_title();
+                throw std::runtime_error(
+                    "the recoverable writer committed, but the independent parse/replay/hash reopen check did not agree");
+            }
+
+            dirty_ = false;
+            std::ostringstream status;
+            status << "saved " << receipt.bytes << " bytes · SHA-256 " << receipt.sha256
+                   << (receipt.replaced_existing ? " · recoverable replacement" : " · new local workspace")
+                   << " · preflight replayed · reopened byte/hash/semantic-exact"
+                   << " · protected priors " << receipt.canonical_priors_retained
+                   << " · pruned verified old priors " << receipt.canonical_priors_pruned;
+            if (receipt.unverified_priors_held || receipt.diagnostic_candidates_held ||
+                receipt.recovery_inventory_truncated) {
+                status << " · recovery held " << receipt.unverified_priors_held
+                       << " uncertain prior(s), " << receipt.diagnostic_candidates_held
+                       << " diagnostic candidate(s)";
+                if (receipt.recovery_inventory_truncated) status << " within a bounded partial inventory";
+            }
+            persistence_status_ = status.str();
+            last_error_.clear();
+            update_window_title();
+            mark_frame_changed(false);
+            return SaveResult::Saved;
+        } catch (const std::exception& error) {
+            dirty_ = commit_returned || dirty_;
+            last_error_ = std::string(commit_returned
+                ? "workspace commit returned, but independent verification held: "
+                : "save held without commit: ") + error.what();
+            persistence_status_ = commit_returned
+                ? "workspace may be committed; independent verification held and work remains marked unsaved"
+                : "save failed — current authored work remains open";
+            std::wstring message = commit_returned
+                ? L"The recoverable writer returned a commit, but the independent verification did not complete. The current work remains open and marked unsaved.\n\n"
+                : L"No successful workspace commit was accepted.\n\n";
+            try { message += utf8_to_wide(error.what()); }
+            catch (...) { message += L"A local save error occurred."; }
+            update_window_title();
+            MessageBoxW(window_, message.c_str(), L"Milesing · My Light — save held",
+                        MB_OK | MB_ICONERROR);
+            mark_frame_changed(false);
+            return SaveResult::Failed;
+        }
+    }
+
+    void on_close() {
+        if (dirty_) {
+            const int answer = MessageBoxW(
+                window_,
+                L"The current authored work has unsaved changes.\n\n"
+                L"Yes: save explicitly, then close\nNo: close without writing\nCancel: keep working",
+                L"Milesing · My Light — unsaved authored work",
+                MB_YESNOCANCEL | MB_ICONWARNING | MB_DEFBUTTON3);
+            if (answer == IDCANCEL || answer == 0) return;
+            if (answer == IDYES && save_workspace(workspace_path_.empty()) != SaveResult::Saved) return;
+        }
+        DestroyWindow(window_);
+    }
+
+    void update_window_title() const {
+        if (!window_) return;
+        std::wstring title = L"Milesing · My Light — ";
+        title += workspace_path_.empty() ? L"Untitled" : workspace_path_.filename().wstring();
+        if (dirty_) title += L" *";
+        SetWindowTextW(window_, title.c_str());
+    }
+
+    void update_selection_cardinality(bool force) {
+        std::uint64_t signature = 1469598103934665603ull;
+        for (const std::size_t id : editor_.selection()) {
+            signature ^= static_cast<std::uint64_t>(id);
+            signature *= 1099511628211ull;
+        }
+        signature ^= static_cast<std::uint64_t>(editor_.workspace());
+        if (!force && selection_signature_ == signature) return;
+
+        NameList selected_names;
+        selected_names.reserve(editor_.selection().size());
+        for (const std::size_t id : editor_.selection()) {
+            if (const WorldNode* node = editor_.world().find(id);
+                node && node->catalog_index < light_catalog.size()) {
+                selected_names.emplace_back(light_catalog[node->catalog_index].unit);
+            }
+        }
+        selection_runtime_.clear();
+        AuthoredInvocation size = invoke_authored_light(
+            editor_.world(), selection_runtime_, "SIZE",
+            {{0, Operand::names(std::move(selected_names)), "actual attended Light body names", std::nullopt, std::nullopt}},
+            "APP selection and workspace status",
+            "calculate the cardinality of exactly the bodies attended in the displayed workspace");
+        selection_count_ = editor_.selection().size();
+        if (size.invocation.value && size.invocation.value->numeric()) {
+            selection_count_ = static_cast<std::size_t>((std::max)(0.0, size.invocation.value->as_number()));
+        }
+        selection_application_ = std::move(size.application);
+        selection_signature_ = signature;
+    }
+
+    NameList admitted_body_names() const {
+        NameList names;
+        names.reserve(editor_.world().nodes.size());
+        for (const WorldNode& node : editor_.world().nodes) {
+            if (node.visible && node.catalog_index < light_catalog.size()) {
+                names.emplace_back(light_catalog[node.catalog_index].unit);
+            }
+        }
+        return names;
+    }
+
+    NumberList actual_pass_allocations() const {
+        const AuthoredWorld& world = editor_.world();
+        return {
+            static_cast<double>(world.relations.size() + 1),
+            static_cast<double>(world.nodes.size() + 1),
+            static_cast<double>(selection_count_ + 1),
+            static_cast<double>(editor_.runtime().expressions().size() + 1),
+            static_cast<double>(system_association_.levels.size() + 1)
+        };
+    }
+
+    static Matrix actual_pass_dependencies(std::size_t extent) {
+        constexpr double absent = -1.0e6;
+        Matrix matrix{extent, extent, NumberList(extent * extent, absent)};
+        for (std::size_t row = 0; row < extent; ++row) {
+            matrix.values[row * extent + row] = 0.0;
+            if (row > 0) matrix.values[row * extent + row - 1] = 1.0;
+        }
+        return matrix;
+    }
+
+    RectD client_bounds() const noexcept {
+        const D2D1_SIZE_F size = renderer_.logical_size();
+        return {0.0, 0.0, size.width, size.height};
+    }
+
+    Vec2 pointer_from_client(LPARAM lparam) const noexcept {
+        const double factor = 96.0 / dpi_;
+        return {GET_X_LPARAM(lparam) * factor, GET_Y_LPARAM(lparam) * factor};
+    }
+
+    static bool key_down(int key) noexcept { return (GetKeyState(key) & 0x8000) != 0; }
+
+    static PointerModifiers pointer_modifiers() noexcept {
+        return {key_down(VK_CONTROL), key_down(VK_SHIFT), key_down(VK_MENU)};
+    }
+
+    double timeline_phase() const noexcept {
+        const double duration = editor_.timeline_duration();
+        if (!std::isfinite(duration) || duration <= 0.0) return 0.0;
+        return std::clamp(editor_.timeline_time() / duration, 0.0, 1.0);
+    }
+
+    std::wstring status_line() const {
+        std::ostringstream status;
+        status << editor_.status() << "  ·  SIZE/cardinality selected=" << selection_count_;
+        if (selection_application_) status << " expr " << selection_application_->expression.value;
+        if (resize_application_) {
+            status << "  ·  CHANGELY/forward_diff width=" << std::fixed << std::setprecision(1)
+                   << resize_change_ << " expr " << resize_application_->expression.value;
+        }
+        if (command_application_) status << "  ·  COMMANDSEA→DESIGNING expr "
+                                         << command_application_->expression.value;
+        if (!persistence_status_.empty()) status << "  ·  " << persistence_status_;
+        if (!last_error_.empty()) status << "  ·  " << last_error_;
+        return utf8_to_wide(status.str());
+    }
+
+    void update_animation_timer() {
+        const bool animate = editor_.playing();
+        if (animate == animation_active_) return;
+        animation_active_ = animate;
+        if (animation_active_) SetTimer(window_, animation_timer, 33, nullptr);
+        else KillTimer(window_, animation_timer);
+    }
+
+    void mark_frame_changed(bool invalidate_plan = true) {
+        if (invalidate_plan) {
+            ++frame_cause_;
+            renderer_.invalidate_plan();
+        }
+        InvalidateRect(window_, nullptr, FALSE);
+    }
+
+    static constexpr UINT_PTR animation_timer = 1;
+    static constexpr std::size_t maximum_resize_trace = 16;
+
+    HINSTANCE instance_{};
+    HWND window_{};
+    float dpi_{96.0f};
+    Editor editor_{};
+    LightRuntime command_runtime_{8};
+    LightRuntime resize_runtime_{4};
+    LightRuntime selection_runtime_{4};
+    LightRuntime system_runtime_{16};
+    SystemParticipation system_participation_{};
+    SpatialSystemAssociation system_association_{};
+    Renderer renderer_{};
+    NumberList resize_widths_{};
+    double resize_change_{};
+    std::size_t selection_count_{};
+    std::uint64_t selection_signature_{(std::numeric_limits<std::uint64_t>::max)()};
+    std::uint64_t frame_cause_{1};
+    std::optional<AppliedOperation> resize_application_{};
+    std::optional<AppliedOperation> selection_application_{};
+    std::optional<AppliedOperation> command_application_{};
+    std::optional<Operand> command_result_{};
+    std::filesystem::path workspace_path_{};
+    std::string committed_sha256_{};
+    std::string persistence_status_{};
+    std::string last_error_{};
+    bool dirty_{};
+    bool animation_active_{};
+    std::chrono::steady_clock::time_point last_tick_{};
+};
+
+} // namespace milesing
+
+#if defined(MILESING_OPERATOR_SELF_TEST)
+int main() {
+    std::vector<std::filesystem::path> temporary_bodies;
+    try {
+        const milesing::OperatorVerificationReport report = milesing::verify_all_operator_fixtures();
+        for (const milesing::OperatorVerification& failure : report.failures) {
+            std::fprintf(stderr, "FAIL %s / %s: %s%s%s\n", failure.unit.c_str(), failure.code.c_str(),
+                         failure.law.c_str(), failure.detail.empty() ? "" : " — ", failure.detail.c_str());
+        }
+        if (!report.all_passed() || report.checked != milesing::light_catalog.size()) {
+            std::fprintf(stderr, "FAIL operator laws: %zu/%zu passed\n", report.passed, report.checked);
+            return 2;
+        }
+        std::printf("PASS %zu/%zu world-bound Light operator laws\n", report.passed, report.checked);
+
+        milesing::AuthoredWorld corpus_world = milesing::AuthoredWorld::from_light();
+        milesing::LightRuntime corpus_runtime(4096);
+        const std::vector<milesing::Operand> tagged_operands{
+            milesing::Operand{},
+            milesing::Operand::truth(false),
+            milesing::Operand::integer(-7),
+            milesing::Operand::number(-0.0),
+            milesing::Operand::text(""),
+            milesing::Operand::numbers({}),
+            milesing::Operand::names({}),
+            milesing::Operand::complexes({{1.0, -2.0}}),
+            milesing::Operand::points(milesing::Point2List{}),
+            milesing::Operand::points(milesing::Point3List{{1.0, 2.0, 3.0}}),
+            milesing::Operand::point(milesing::Vec2{1.25, -2.5}),
+            milesing::Operand::point(milesing::Vec3{1.0, 2.0, 3.0}),
+            milesing::Operand::matrix(milesing::Matrix{1, 1, {4.0}}),
+            milesing::Operand::relation(milesing::RelationValue{{{"left", "right"}}}),
+            milesing::Operand::graph(milesing::GraphValue{{"a", "b"}, {{"a", "b", 1.5}}}),
+            milesing::Operand::probability(milesing::ProbabilityValue{{"yes", "no"}, {0.75, 0.25}}),
+            milesing::Operand::time(12.5),
+            milesing::Operand::resource("local/only resource"),
+            milesing::Operand::authored("MY LIGHT/SPIRALLY"),
+            milesing::Operand::term(milesing::TermValue{"f", {"x", "y"}}),
+            milesing::Operand::operad_tree(milesing::OperadTreeValue{{"root", "leaf"}, {-1, 0}}),
+            milesing::Operand::operad_substitutions(milesing::OperadSubstitutions{{
+                milesing::OperadGraft{"leaf", milesing::OperadTreeValue{{"graft"}, {-1}}}}}),
+            milesing::Operand::voronoi(milesing::VoronoiDiagram{
+                {{0.0, 0.0}}, {{{-1.0, -1.0}, {1.0, -1.0}, {1.0, 1.0}, {-1.0, 1.0}}}}),
+            milesing::Operand::free_module(milesing::FreeModuleValue{"Z", {"e"}, {2.0}}),
+            milesing::Operand::divinand(milesing::DivinandValue{{"MY LIGHT"}, {"divinand"}, 1})
+        };
+        for (const milesing::Operand& operand : tagged_operands) {
+            (void)corpus_runtime.invoke("group", {operand});
+        }
+        (void)corpus_runtime.invoke("group", {milesing::Operand::expression(0)});
+
+        std::vector<milesing::AppliedOperation> corpus_applied;
+        corpus_applied.reserve(milesing::light_catalog.size());
+        for (const milesing::LightDefinition& definition : milesing::light_catalog) {
+            corpus_applied.push_back(milesing::exercise_operator(
+                corpus_world, corpus_runtime, definition.unit,
+                "guarded all-tag canonical corpus",
+                "prove every assigned Light fixture and emitted operand tag survives exact canonical replay").application);
+        }
+        std::array<bool, std::variant_size_v<milesing::Operand::Body>> covered_tags{};
+        for (const milesing::Expression& expression : corpus_runtime.expressions()) {
+            for (const milesing::Operand& operand : expression.operands) covered_tags[operand.body.index()] = true;
+            if (expression.value) covered_tags[expression.value->body.index()] = true;
+        }
+        if (!std::all_of(covered_tags.begin(), covered_tags.end(), [](bool covered) { return covered; })) {
+            throw std::runtime_error("canonical corpus does not cover every Operand::Body tag");
+        }
+        const std::array<std::size_t, 3> corpus_attention{0, 42, 110};
+        const std::string corpus_body = milesing::canonical_workspace_text(
+            corpus_world, corpus_runtime, corpus_applied, corpus_attention);
+        milesing::WorkspaceParseResult corpus_parsed =
+            milesing::parse_canonical_workspace(corpus_body);
+        if (!corpus_parsed || !corpus_parsed.workspace ||
+            milesing::canonical_workspace_text(
+                corpus_parsed.workspace->world, corpus_parsed.workspace->runtime,
+                corpus_parsed.workspace->applied_operations,
+                corpus_parsed.workspace->attention) != corpus_body) {
+            throw std::runtime_error("all-tag and all-operator canonical corpus did not round-trip byte-exactly");
+        }
+        std::printf("PASS canonical codec: every Operand tag + 111 applied fixtures round-trip byte-exactly\n");
+
+        milesing::AuthoredWorld world = milesing::AuthoredWorld::from_light();
+        milesing::LightRuntime runtime(32);
+        const milesing::AuthoredInvocation spiral = milesing::exercise_operator(
+            world, runtime, "SPIRALLY", "guarded persistence verification",
+            "retain one exact authored Light application across recoverable local generations");
+        const std::array<milesing::AppliedOperation, 1> applied{spiral.application};
+        const std::array<std::size_t, 2> attention{0, 42};
+        const std::filesystem::path temporary = std::filesystem::temp_directory_path() /
+            (std::wstring(L"MilesingLight-selftest-") + std::to_wstring(GetCurrentProcessId()) + L"-" +
+             std::to_wstring(GetTickCount64()) + L".mlight");
+        temporary_bodies.push_back(temporary);
+
+        const std::string first_body = milesing::canonical_workspace_text(
+            world, runtime, applied, attention);
+        const milesing::WriteReceipt first = milesing::write_workspace_recoverably(
+            temporary, world, runtime, applied, attention);
+        if (!first.reopened_equal || first.replaced_existing || first.sha256 != milesing::sha256_hex(first_body) ||
+            milesing::read_local_text(temporary, first_body.size() + 1) != first_body) {
+            throw std::runtime_error("persistence first candidate/flush/promote/reopen receipt disagreed");
+        }
+
+        milesing::WorkspaceParseResult parsed = milesing::parse_canonical_workspace(first_body);
+        if (!parsed || !parsed.workspace || parsed.workspace->attention !=
+                std::vector<std::size_t>(attention.begin(), attention.end())) {
+            throw std::runtime_error("canonical parser did not retain exact authored attention");
+        }
+        milesing::Editor reopened_editor;
+        std::string restoration_error;
+        if (!reopened_editor.restore_workspace(std::move(*parsed.workspace), restoration_error)) {
+            throw std::runtime_error("atomic Editor restoration rejected a valid canonical body: " + restoration_error);
+        }
+        const std::string restored_body = milesing::canonical_workspace_text(
+            reopened_editor.world(), reopened_editor.runtime(), reopened_editor.applied_operations(),
+            reopened_editor.selection());
+        if (restored_body != first_body) {
+            throw std::runtime_error("restored Editor does not reproduce the exact canonical body");
+        }
+
+        ++world.revision;
+        const std::string second_body = milesing::canonical_workspace_text(
+            world, runtime, applied, attention);
+        const milesing::WriteReceipt second = milesing::write_workspace_recoverably(
+            temporary, world, runtime, applied, attention);
+        if (!second.prior_path.empty()) temporary_bodies.push_back(second.prior_path);
+        const std::string reopened = milesing::read_local_text(temporary, second_body.size() + 1);
+        const std::string prior = milesing::read_local_text(second.prior_path, first_body.size() + 1);
+        const std::vector<milesing::RecoverableBody> recovery = milesing::inspect_workspace_recovery(temporary);
+        const std::size_t canonical_count = static_cast<std::size_t>(std::count_if(
+            recovery.begin(), recovery.end(), [](const milesing::RecoverableBody& body) { return body.canonical; }));
+        const bool reopened_canonical = milesing::is_canonical_workspace(reopened);
+        const bool prior_canonical = milesing::is_canonical_workspace(prior);
+        if (!second.reopened_equal || !second.reopened_hash_equal || !second.reopened_canonical ||
+            !second.replaced_existing || reopened != second_body || prior != first_body ||
+            second.sha256 != milesing::sha256_hex(reopened) || !reopened_canonical ||
+            !prior_canonical || canonical_count != 2) {
+            std::ostringstream detail;
+            detail << "persistence replacement/prior/hash/recovery law disagreed: reopened_equal="
+                   << second.reopened_equal << " reopened_hash_equal=" << second.reopened_hash_equal
+                   << " reopened_canonical=" << second.reopened_canonical
+                   << " replaced=" << second.replaced_existing
+                   << " reopened_body=" << (reopened == second_body)
+                   << " prior_body=" << (prior == first_body)
+                   << " hash=" << (second.sha256 == milesing::sha256_hex(reopened))
+                   << " parsed_reopened=" << reopened_canonical
+                   << " parsed_prior=" << prior_canonical
+                   << " canonical_count=" << canonical_count
+                   << " recovery_size=" << recovery.size()
+                   << " retained=" << second.canonical_priors_retained
+                   << " pruned=" << second.canonical_priors_pruned
+                   << " held=" << second.unverified_priors_held;
+            for (const auto& body : recovery) {
+                detail << " [" << body.path.filename().string() << " canonical=" << body.canonical << "]";
+            }
+            throw std::runtime_error(detail.str());
+        }
+
+        bool removed = true;
+        for (const auto& body : temporary_bodies) {
+            std::error_code error;
+            removed = std::filesystem::remove(body, error) && !error && removed;
+        }
+        temporary_bodies.clear();
+        if (!removed) {
+            std::fprintf(stderr, "FAIL persistence: verified temporary bodies could not be removed\n");
+            return 5;
+        }
+        std::printf("PASS recoverable local writing: first + replacement + protected prior + SHA-256 + exact reopen\n");
+        std::printf("PASS canonical realization: attention + exact Editor restoration + replay-derived results\n");
+        return 0;
+    } catch (const std::exception& error) {
+        for (const auto& body : temporary_bodies) {
+            std::error_code ignored;
+            std::filesystem::remove(body, ignored);
+        }
+        std::fprintf(stderr, "FAIL bootstrap: %s\n", error.what());
+        return 1;
+    }
+}
+#else
+int WINAPI wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE previous_instance,
+                    _In_ PWSTR command_line, _In_ int show_command) {
+    (void)previous_instance;
+    (void)command_line;
+    SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+    const HRESULT com_result = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
+    const bool com_initialized = SUCCEEDED(com_result);
+    int exit_code = 1;
+    try {
+        milesing::NativeApplication application;
+        if (!application.create(instance, show_command)) {
+            MessageBoxW(nullptr, L"The native Light window could not be created.",
+                        L"Milesing · My Light", MB_OK | MB_ICONERROR);
+        } else {
+            exit_code = application.run();
+        }
+    } catch (const std::exception& error) {
+        std::wstring message = L"The Light application stopped during visible initialization: ";
+        try { message += milesing::utf8_to_wide(error.what()); }
+        catch (...) { message += L"an initialization error occurred"; }
+        MessageBoxW(nullptr, message.c_str(), L"Milesing · My Light", MB_OK | MB_ICONERROR);
+    }
+    if (com_initialized) CoUninitialize();
+    return exit_code;
+}
+#endif

@@ -1,0 +1,111 @@
+DRAW.IO CONCEPT SPACE REBUILT AS ORIGINAL MILESING C++20
+
+READING RULE
+Each line is a feature we understand from the supplied Draw.io source, followed by the original application behavior and the direct code it requires. Reference source, formats, assets, interface, names, and architecture stay in References. Every Light function named below runs inside the same C++ feature on its real typed operands. Where no current Light function fits, the feature uses ordinary original C++ mathematics. Divinand remains with the complete authored work and result.
+
+STACK KEY
+CORE = C++20 typed Light catalog, values, expression graph, authored-world graph, commands, finite work, and writing.
+HOST = Win32 window, messages, focus, DPI, pointer, keyboard, TSF/IME, timers, and explicit local intake/output.
+DRAW = D3D11 + DXGI + Direct2D + DirectWrite original renderer.
+IMAGE = WIC deliberate local image decode/encode.
+ACCESS = native UI Automation provider over the same semantic commands and authored world.
+
+LIGHT AND AUTHORED WORK
+1. Executable Light expression — Type or graphically compose any actual callable, supply operands, inspect the domain, calculate a finite result, retain a symbolic recipe, and use the result again. CORE: canonical 111-entry registry, typed dispatch, expression arena, work allowance. DRAW: structured formula and graph portrayal.
+2. Graphical operands — Values, functions, results, conceptual bodies, worlds, map positions, and later granted measures appear as editable operands. AUTHORIALLY `term`, DESIGNING `group`, METHODICALLY `compose`, and COMMANDSEA `action_prefix` execute inside the expression/editor code.
+3. Recursive work placement — Place a complete editable work inside another work and later inside 3D. CORE stores one shared authored body and portal relation; DRAW renders requested detail into a nested target.
+4. Actual Light arrangement — UNIVERSING `spin` turns the actual central classes and organizes them around actual subclass relations. It remains distinct from generic circle/radial layout.
+5. Authored order mathematics — FUSING `mix`, SHIFTY `cyclic_shift`, and CEREMONIES `reverse` directly transform supplied authored sequences. Editing-history reversal remains its own command mechanism.
+
+CANVAS AND ATTENTION
+6. Infinite-feeling canvas — Pan, zoom, center, fit, overview, exact coordinates, rulers, grid, guides, and minimap. HOST receives pointer/keyboard; DRAW uses camera transforms and purpose-sized detail. WHYS `preimage` resolves work positions mapping into a screen region.
+7. Point and plural attention — Click, Ctrl-toggle, Shift-extend, relation/vertex attention, all, clear, and keyboard traversal. EMPTISM `is_empty`, SIZE `cardinality`, and BINARISM `exclusive_or` operate on the finite technical membership where their domains fit.
+8. Marquee and lasso — Transform rectangle/freehand region into authored coordinates, query the spatial index, and portray candidates. CHEST `convex_hull` is called only for an explicitly requested convex lasso body.
+9. Search attention — Labels, canonical Light names, properties, tags, pages, layers, relations, and recipes. COMMUNITY `concept_close` performs a real shared-attribute closure; WHYS `preimage` traces supplied result mappings back to sources.
+
+DIRECT AUTHORSHIP
+10. Create bodies — Text, shape, path, image, table, container, note, relation, mathematical body, and Light expression at pointer/focus. CORE command + DRAW geometry/text + IMAGE when a chosen local image enters.
+11. Move and nudge — Pointer/keyboard translation with snapping and live coordinates. REALITY `add` and NIHILISM `sub` act on coordinate operands; CRIES `vector_norm` supplies requested drag magnitude.
+12. Resize and scale — Handles, exact size, aspect lock, center scaling, multi-resize. INTIMACY `mul`, METHODOLOGIES `div`, and RECIPROCITY `reciprocal` act on compatible scale operands.
+13. Rotate and reflect — Handle/exact angle, pivot, horizontal/vertical reflection. GIVENS `givens_rotation` performs real plane rotation; reflections use ordinary matrix math.
+14. Duplicate and repeat — One duplicate is a direct command; GROWFLY `iterate` or GROWING `growth` performs an exact requested finite repetition.
+15. Remove — DEATHISM `delete_vertex(G,v)` removes a graph vertex and incident relations. Other authored material uses its correctly scoped removal command.
+16. Group and release — ORGANIZATIONS `union_sets` merges supplied partition blocks; SELVES `discrete_partition` releases a chosen group into singleton blocks. Nested groups remain enterable and editable.
+17. Layer order — front/back/step movement plus explicit cyclic shift, mix, and reverse. CORE retains exact authored order; DRAW follows it.
+18. Lock and capability — Lock movement, text, geometry, relations, or layer while preserving reading and traversal. CORE capability flags drive HOST input applicability and ACCESS actions.
+19. Exact geometry — Numeric position/size/angle, path points, anchors, waypoints, ports, and curves. DirectWrite edits values; Direct2D portrays them; actual arithmetic calls the central Light operations.
+20. Freehand and pen — pressure-aware pointer samples, bounded stroke fitting, erasing, point editing, and chosen conversion to geometry. HOST pointer history + original C++ fitter + Direct2D path.
+21. Tables and lanes — rows/columns, merge/split, headers, resizing, reordering, nested bodies. SIZE counts; mul/div size proportion; SHIFTY/reverse operate explicit orders.
+22. Properties and internal links — typed text, numbers, duration, color, expression, authored relation, local file reference, and portal target. No remote-link opening exists in the private body.
+23. Style — fill, stroke, gradient, opacity, width, dash, rounding, shadow, font, spacing, alignment, reusable original presets. Direct2D brushes/effects/strokes + DirectWrite spans.
+24. Component transfer — copy only style, geometry, text, properties, expressions, or relations as explicitly chosen. C++ typed component command preserves every unchosen part.
+25. Personal recipes — original shape recipes, reusable formations, palettes, and templates stored locally; no Draw.io stencils or visual language copied.
+
+TEXT AND MATHEMATICS
+26. Unicode editing — caret, ranges, selection, multiline text, wrapping, direction, font fallback, TSF/IME composition, and application-local transfer. DirectWrite layout/hit testing + original C++ text model.
+27. Rich text — typeface, size, weight, style, decoration, color, paragraphs, lists, line spacing, superscript/subscript, autosize, clip/scroll/overflow.
+28. Executable math editor — completion for actual names, codable expressions, signatures, operands, domains, grouping, result routes, and nested calls. One registry powers parsing, execution, portrayal, and accessibility.
+29. Graphical expression editor — operand sockets and result ports, grouped calls, composition, recursion, domain portrayal, and nested inspection. `term`, `group`, `compose`, `action_prefix`, `prim_rec`, `iterate`, and `growth` execute directly.
+30. Binding-safe rename — NAMA `alpha_rename` changes bound names only while preserving binding. Ordinary authored titles use ordinary Unicode rename.
+31. Find/replace and extraction — preview one/all replacements; export selected or complete text, properties, relations, and expressions with authored source routes.
+
+RELATIONS
+32. Create/reconnect/disconnect — gesture from body/port to compatible target; validity preview; one committed relation command; endpoint reconnection and relation-only removal.
+33. Converse — CONISM `converse(R)` reverses supplied ordered pairs when relation converse is explicitly invoked.
+34. Ports and anchors — named, perimeter, fixed, floating, and authored connection positions with point/region hit testing.
+35. Waypoints and route shapes — manual points; straight, orthogonal, curved, elbow, loop, and self-loop portrayals.
+36. Obstacle routing — QUEST `astar_path` runs on a finite routing graph with supplied costs and admissible heuristic.
+37. Measurements — TENSIONS `coboundary` calculates oriented differences across supplied connections; CRIES measures requested vector magnitude.
+38. Parallel relations and labels — lane assignment, draggable labels, along-route offsets. MARRIAGE `stable_match` may assign supplied labels to preferred candidate anchors when that exact problem is requested.
+39. Crossings and styles — bridges/gaps, arrows, dashes, width, color, rounding, flow portrayal, and semantic text.
+40. Split relation — inserting a body replaces one relation with two relations in one authored command.
+
+PAGES, LAYERS, AND ARRANGEMENT
+41. Pages/workspaces — create, duplicate, rename, reorder, remove, switch, overview, saved camera, pointer and keyboard access.
+42. Layers — create, duplicate, rename, reorder, remove, current layer, movement between layers, visibility, locking, and layer search.
+43. Progressive reveal — FILTERAGE `filtration_at` reveals a supplied complex at a supplied threshold. Ordinary hide/show remains ordinary UI work.
+44. Alignment/distribution — edges, centers, baseline, axes, equal gaps. RESPECT `isotonic_fit` acts only when supplied ordered adjustments must retain order; other geometry uses add/sub/div.
+45. Hierarchical layout — HIERARCHY `covers` extracts immediate order pairs; original placer assigns levels, crossing reduction, and relation routes.
+46. Tree/radial/circle — original bounded traversal and trigonometry. SHIFTY changes an explicitly authored cyclic order.
+47. Spiral — SPIRALLY `log_spiral(a,b,theta)` produces actual positions.
+48. Voronoi — EARTH CITY `voronoi(points)` builds nearest-center regions for layout, attention, or portrayal.
+49. Fractal — FRACTALLY `hutchinson(shape,maps)` produces the requested finite stage while retaining the IFS recipe.
+50. Rewriting/generative layout — CREATIVITY `l_system_step`, CHAOSISM `rule30`, and bounded GROWING execute actual supplied rules.
+51. Organic layout — original cancellable force solver with deterministic seed; FUSING `mix` changes the supplied order only when explicitly requested.
+52. Exact-cover placement — PUZZLER `exact_cover` assigns supplied candidates to finite requirements exactly once.
+53. Best layout choices — BEST `pareto_front` returns nondominated measured candidates for the person to choose.
+
+TRANSFER, INTAKE, AND OUTPUT
+54. Private structured copy/cut/paste — application-local authored fragment by default; deliberate system clipboard export supplies Unicode/image fallbacks.
+55. Paste location and cross-work placement — pointer/original position; complete 2D/3D portal bodies and internal relations remain editable.
+56. Drag/drop — local files, resources, formations, pages, and layers with source/destination portrayal and bounded intake.
+57. Personal scratch space and templates — add, search, preview, insert, rename, categorize, and remove local reusable work.
+58. Native Milesing work — original canonical authored format containing actual Light expressions, worlds, relations, geometry, resources, recipes, and recovery.
+59. Foreign graph intake — bounded original readers may translate selected Draw.io XML, GraphML, CSV, Mermaid, PlantUML, VSDX, SVG, and images into Milesing bodies; foreign representation never becomes canonical.
+60. Image intake — WIC reads deliberately chosen local PNG/JPEG/GIF/BMP/TIFF/JPEG XR/DDS/ICO within dimension and byte ceilings.
+61. Native/image/SVG/text output — preview exact selection/page/range, scale, crop, background, metadata, and destination; original writers and WIC produce the selected local body.
+62. Print/PDF route — Direct2D command lists feed Windows printing; Microsoft Print to PDF remains the OS-selected destination.
+
+HISTORY, WRITING, RECOVERY, AND PRESENTATION
+63. Gesture-sized history — one drag, edit, paste, layout, relation, expression, or property change equals one reversible intention. CEREMONIES reversal is never substituted for technical undo.
+64. Compare discrete work — CHANGELY `forward_diff` operates only on a supplied finite numbered history function. Ordinary command deltas remain original C++ records.
+65. New/open/save/save-as — explicit local paths, modified marker, close preview, canonical writer, and reopening.
+66. Autosave and checkpoints — bounded local candidates and protected prior bodies; no background network or cloud body.
+67. Durable replacement — candidate write, flush, hash, reopen, protected prior copy, ReplaceFileW, final reopen.
+68. Recovery — inspect complete final/prior/candidate bodies and deliberately open or promote one; damaged optional caches regenerate.
+69. External local change — handle/path facts and hash comparison; offer reopen, copy, or deliberate replacement.
+70. Presentation — full-window authored pages/worlds, focus steps, layer/filter changes, finite Light execution, and portal travel.
+71. Timeline — TIMELY `maxplus_mv` schedules declared dependencies; PRESENTLY `eval_at` reads supplied time functions; MEMORY `delay_k`, TRACKA `dtw_path`, PROMAGE `eventually`, growth/iterate act on their exact finite domains.
+72. Accessible completion — keyboard command access, graph navigation, exact geometry, screen-reader fragments, selection/invoke/value/text/transform/scroll patterns, high contrast, visible focus, readable scale, and reduced motion.
+73. Offline closure — every core path completes through local C++ and Windows components with no account, telemetry, server, remote resource, or update polling.
+
+REFERENCE AREAS UNDERSTOOD
+Actions, menus, dialogs, graph editing, format panels, sidebar/toolbars, pages, local files, freehand, rulers, tree and relation routing, layout families, importers, exporters, and recovery behavior in the supplied Draw.io source.
+
+MICROSOFT DOCUMENTATION
+https://learn.microsoft.com/en-us/windows/win32/direct2d/direct2d-overview
+https://learn.microsoft.com/en-us/windows/win32/direct2d/direct2d-and-directwrite
+https://learn.microsoft.com/en-us/windows/win32/input_pointer/pointer-input-messages
+https://learn.microsoft.com/en-us/windows/win32/winauto/uiauto-providersoverview
+https://learn.microsoft.com/en-us/windows/win32/wic/-wic-lh
+https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-replacefilew

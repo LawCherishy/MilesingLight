@@ -1,0 +1,1080 @@
+#ifndef MILESING_EDITOR_INCLUDED
+#define MILESING_EDITOR_INCLUDED 1
+
+namespace milesing {
+
+enum class Workspace : std::uint8_t {
+    MyLight,
+    Fractal2D,
+    Fractal3D,
+    Operations,
+    TimeMedia,
+    SystemRelation
+};
+
+inline constexpr std::array<std::string_view, 6> workspace_names{
+    "MY LIGHT", "2D FRACTAL", "3D FRACTAL", "OPERATIONS",
+    "TIME / MEDIA", "SYSTEM RELATION"
+};
+
+enum class PointerButton : std::uint8_t { Left, Middle, Right };
+
+struct PointerModifiers {
+    bool control{};
+    bool shift{};
+    bool alt{};
+};
+
+struct EditorLayout {
+    RectD rail{};
+    RectD top_bar{};
+    RectD canvas{};
+    RectD inspector{};
+    RectD bottom{};
+};
+
+inline constexpr double operations_header_height = 54.0;
+inline constexpr double operations_workbench_gap = 8.0;
+inline constexpr double operations_socket_start = 48.0;
+inline constexpr double operations_socket_height = 20.0;
+inline constexpr double operations_socket_stride = 22.0;
+
+inline double operations_workbench_height(RectD viewport) noexcept {
+    const double available = (std::max)(0.0, viewport.height - operations_header_height -
+                                             operations_workbench_gap);
+    const double desired = std::clamp(viewport.height * 0.39, 220.0, 244.0);
+    const double leaving_a_readable_grid = (std::max)(0.0, available - 132.0);
+    return (std::min)(desired, leaving_a_readable_grid);
+}
+
+inline RectD operations_workbench_bounds(RectD viewport) noexcept {
+    const double height = operations_workbench_height(viewport);
+    return {viewport.x + 4.0, viewport.bottom() - height,
+            (std::max)(0.0, viewport.width - 8.0), height};
+}
+
+inline RectD operations_grid_bounds(RectD viewport) noexcept {
+    const RectD workbench = operations_workbench_bounds(viewport);
+    const double top = viewport.y + operations_header_height;
+    return {viewport.x, top, viewport.width,
+            (std::max)(0.0, workbench.y - operations_workbench_gap - top)};
+}
+
+inline RectD operation_socket_bounds(RectD viewport, std::size_t socket) noexcept {
+    const RectD workbench = operations_workbench_bounds(viewport);
+    return {workbench.x + 12.0,
+            workbench.y + operations_socket_start +
+                operations_socket_stride * static_cast<double>(socket),
+            (std::max)(0.0, workbench.width - 24.0), operations_socket_height};
+}
+
+inline std::optional<std::size_t> operation_socket_at(
+    Vec2 point, RectD viewport, std::size_t socket_count) noexcept {
+    for (std::size_t socket = 0; socket < socket_count; ++socket) {
+        if (operation_socket_bounds(viewport, socket).contains(point)) return socket;
+    }
+    return std::nullopt;
+}
+
+inline std::optional<std::size_t> operation_catalog_at(Vec2 point, RectD viewport) noexcept {
+    if (!viewport.contains(point)) return std::nullopt;
+    if (point.y < viewport.y + operations_header_height) return std::size_t{0};
+    const RectD grid = operations_grid_bounds(viewport);
+    if (!grid.contains(point) || grid.width <= 0.0 || grid.height <= 0.0) return std::nullopt;
+    const std::size_t column = static_cast<std::size_t>((point.x - grid.x) / (grid.width / 10.0));
+    const std::size_t row = static_cast<std::size_t>((point.y - grid.y) / (grid.height / 11.0));
+    if (column >= 10 || row >= 11) return std::nullopt;
+    const std::size_t catalog_index = 1 + column * 11 + row;
+    return catalog_index < light_catalog.size() ? std::optional<std::size_t>{catalog_index}
+                                                 : std::nullopt;
+}
+
+struct OperationDraft {
+    std::size_t catalog_index{};
+    std::vector<OperandDesignation> sockets{};
+    std::optional<Operand> last_result{};
+    ExpressionRoute last_expression{};
+    bool invoked{};
+    bool customized{};
+    std::size_t active_socket{};
+    std::string last_error{};
+};
+
+struct EditorNodeState {
+    std::size_t id{no_node};
+    Vec2 planar{};
+    Vec3 spatial{};
+    double extent{};
+    double rotation{};
+    bool visible{};
+    bool locked{};
+};
+
+struct EditorSnapshot {
+    std::vector<EditorNodeState> nodes{};
+    std::vector<std::size_t> authored_order{};
+};
+
+struct EditorHistoryEntry {
+    std::string intention{};
+    EditorSnapshot before{};
+    EditorSnapshot after{};
+};
+
+enum class EditorGestureMode : std::uint8_t {
+    None,
+    Pan2D,
+    Move2D,
+    Marquee2D,
+    Orbit3D,
+    Pan3D,
+    Move3D
+};
+
+struct EditorGesture {
+    EditorGestureMode mode{EditorGestureMode::None};
+    Vec2 start{};
+    Vec2 previous{};
+    RectD marquee{};
+    EditorSnapshot before{};
+    bool changed{};
+};
+
+class Editor {
+public:
+    static constexpr std::size_t maximum_retained_receipts =
+        WorkspaceParseLimits{}.maximum_applied_operations;
+
+    Editor()
+        : world_(AuthoredWorld::from_light()), planar_(runtime_), spatial_(runtime_) {
+        drafts_.reserve(light_catalog.size());
+        for (std::size_t index = 0; index < light_catalog.size(); ++index) {
+            drafts_.push_back(OperationDraft{index,
+                                             operator_fixture(world_, light_catalog[index].unit),
+                                             std::nullopt, {}, false, false, 0, {}});
+        }
+        planar_.arrange_light(world_, 0);
+        spatial_.arrange_light(world_, 0);
+        drain_fractalizer_receipts();
+        if (!world_.nodes.empty()) selection_.push_back(world_.nodes.front().id);
+        update_selection_measure();
+        status_ = "111 actual Light bodies share one living planar and spatial work";
+    }
+
+    AuthoredWorld& world() { return world_; }
+    const AuthoredWorld& world() const { return world_; }
+    LightRuntime& runtime() { return runtime_; }
+    const LightRuntime& runtime() const { return runtime_; }
+    Fractalizer2D& planar() { return planar_; }
+    const Fractalizer2D& planar() const { return planar_; }
+    Fractalizer3D& spatial() { return spatial_; }
+    const Fractalizer3D& spatial() const { return spatial_; }
+
+    Workspace workspace() const { return workspace_; }
+    std::string_view workspace_name() const {
+        return workspace_names[static_cast<std::size_t>(workspace_)];
+    }
+    std::span<const std::size_t> selection() const { return selection_; }
+    std::string_view status() const { return status_; }
+    bool playing() const { return playing_; }
+    double timeline_time() const { return timeline_time_; }
+    double timeline_duration() const { return timeline_duration_; }
+    std::size_t operation_cursor() const { return operation_cursor_; }
+    std::span<const OperationDraft> operation_drafts() const { return drafts_; }
+    const OperationDraft& active_operation_draft() const { return drafts_.at(operation_cursor_); }
+    std::span<const AppliedOperation> applied_operations() const { return applied_operations_; }
+    const std::optional<AppliedOperation>& latest_receipt() const { return latest_receipt_; }
+    std::uint64_t discarded_applied_operations() const { return discarded_applied_operations_; }
+    const std::array<OperatorCapability, light_catalog.size()>& operation_capabilities() const {
+        return operator_capabilities();
+    }
+
+    bool restore_workspace(ParsedWorkspace restored, std::string& error) {
+        // Nothing below mutates the live editor until the complete parsed body,
+        // its receipt retention extent, and every replacement UI structure are
+        // validated and allocated successfully.
+        try {
+            if (!validate_parsed_workspace(restored, error)) return false;
+            if (restored.applied_operations.size() >
+                WorkspaceParseLimits{}.maximum_applied_operations) {
+                error = "workspace has more applied receipts than the editor retention bound";
+                return false;
+            }
+
+            std::vector<OperationDraft> replacement_drafts;
+            replacement_drafts.reserve(light_catalog.size());
+            for (std::size_t index = 0; index < light_catalog.size(); ++index) {
+                replacement_drafts.push_back(OperationDraft{
+                    index, operator_fixture(restored.world, light_catalog[index].unit),
+                    std::nullopt, {}, false, false, 0, {}});
+            }
+
+            std::vector<Operand> replacement_well;
+            replacement_well.reserve(restored.applied_operations.size());
+            std::optional<AppliedOperation> replacement_latest;
+            std::size_t replacement_cursor = 1;
+            std::int64_t replacement_spin_turn = 0;
+            constexpr std::int64_t maximum_restored_spin_magnitude = 1'000'000;
+            for (const AppliedOperation& applied : restored.applied_operations) {
+                OperationDraft& draft = replacement_drafts[applied.catalog_index];
+                const auto& defaults = draft.sockets;
+                bool customized = defaults.size() != applied.operands.size();
+                if (!customized) {
+                    for (std::size_t i = 0; i < defaults.size(); ++i) {
+                        if (defaults[i].role != applied.operands[i].role ||
+                            canonical_operand(defaults[i].value) != canonical_operand(applied.operands[i].value)) {
+                            customized = true;
+                            break;
+                        }
+                    }
+                }
+                draft.sockets = applied.operands;
+                draft.last_expression = applied.expression;
+                draft.last_result = applied.result;
+                draft.invoked = true;
+                draft.customized = customized;
+                replacement_cursor = applied.catalog_index;
+                replacement_latest = applied;
+                if (applied.result) replacement_well.push_back(*applied.result);
+                // Saved applications are already strictly route-ordered. The
+                // latest valid Spin receipt therefore carries the discrete
+                // turn that the next UNIVERSING command must continue from.
+                if (light_catalog[applied.catalog_index].unit == "UNIVERSING" &&
+                    applied.operands.size() >= 3) {
+                    if (const auto* turn = std::get_if<std::int64_t>(
+                            &applied.operands[2].value.body);
+                        turn && *turn >= -maximum_restored_spin_magnitude &&
+                        *turn <= maximum_restored_spin_magnitude) {
+                        replacement_spin_turn = *turn;
+                    }
+                }
+            }
+            if (replacement_well.size() >
+                WorkspaceParseLimits{}.maximum_applied_operations) {
+                replacement_well.erase(replacement_well.begin(),
+                    replacement_well.end() - static_cast<std::ptrdiff_t>(
+                        WorkspaceParseLimits{}.maximum_applied_operations));
+            }
+
+            std::vector<std::size_t> replacement_selection = restored.attention;
+            std::string replacement_status = "workspace reopened exactly; retained Light expressions, receipts, and attention are live";
+
+            static_assert(std::is_nothrow_move_assignable_v<LightRuntime>);
+            static_assert(std::is_nothrow_move_assignable_v<AuthoredWorld>);
+            static_assert(std::is_nothrow_move_assignable_v<Fractalizer2D>);
+            static_assert(std::is_nothrow_move_assignable_v<Fractalizer3D>);
+
+            runtime_ = std::move(restored.runtime);
+            world_ = std::move(restored.world);
+            // Reconstructing both portrayal engines drops all old caches,
+            // pending producer receipts, camera state, and stale runtime pointers.
+            planar_ = Fractalizer2D(runtime_);
+            spatial_ = Fractalizer3D(runtime_);
+            workspace_ = Workspace::MyLight;
+            selection_ = std::move(replacement_selection);
+            drafts_ = std::move(replacement_drafts);
+            applied_operations_ = std::move(restored.applied_operations);
+            latest_receipt_ = std::move(replacement_latest);
+            operand_well_ = std::move(replacement_well);
+            discarded_applied_operations_ = 0;
+            history_.clear();
+            history_cursor_ = 0;
+            operation_cursor_ = replacement_cursor;
+            gesture_ = EditorGesture{};
+            status_ = std::move(replacement_status);
+            spin_turn_ = replacement_spin_turn;
+            timeline_time_ = 0.0;
+            timeline_duration_ = 24.0;
+            playing_ = false;
+            error.clear();
+            return true;
+        } catch (const std::exception& failure) {
+            error = std::string("workspace restoration was rejected before live replacement: ") + failure.what();
+            return false;
+        }
+    }
+
+    EditorLayout layout(RectD client) const {
+        constexpr double rail_width = 184.0;
+        constexpr double inspector_width = 304.0;
+        constexpr double top_height = 70.0;
+        constexpr double bottom_height = 76.0;
+        const double middle_width = std::max(0.0, client.width - rail_width - inspector_width);
+        const double middle_height = std::max(0.0, client.height - top_height - bottom_height);
+        return {
+            {client.x, client.y, rail_width, client.height},
+            {client.x + rail_width, client.y, middle_width, top_height},
+            {client.x + rail_width + 14.0, client.y + top_height + 12.0,
+             std::max(0.0, middle_width - 28.0), std::max(0.0, middle_height - 24.0)},
+            {client.right() - inspector_width, client.y + top_height,
+             inspector_width, middle_height},
+            {client.x + rail_width, client.bottom() - bottom_height,
+             middle_width, bottom_height}
+        };
+    }
+
+    PlanarFrame planar_frame(RectD viewport) {
+        PlanarFrame frame = planar_.compose(world_, viewport, selection_);
+        drain_fractalizer_receipts();
+        return frame;
+    }
+
+    SpatialFrame spatial_frame(RectD viewport) {
+        SpatialFrame frame = spatial_.compose(world_, viewport, selection_);
+        drain_fractalizer_receipts();
+        return frame;
+    }
+
+    void set_workspace(Workspace workspace) {
+        workspace_ = workspace;
+        status_ = std::string(workspace_name()) + " — one shared authored work";
+    }
+
+    void tick(double seconds) {
+        const double bounded = std::clamp(seconds, 0.0, 0.1);
+        if (!playing_) return;
+        timeline_time_ += bounded;
+        if (timeline_time_ > timeline_duration_) {
+            timeline_time_ = std::fmod(timeline_time_, timeline_duration_);
+        }
+    }
+
+    bool pointer_down(Vec2 point, PointerButton button,
+                      PointerModifiers modifiers, RectD client) {
+        const EditorLayout regions = layout(client);
+        if (button == PointerButton::Left && regions.rail.contains(point)) {
+            for (std::size_t index = 0; index < workspace_names.size(); ++index) {
+                const RectD item{client.x + 14.0, client.y + 98.0 + 47.0 * index, 156.0, 38.0};
+                if (item.contains(point)) {
+                    set_workspace(static_cast<Workspace>(index));
+                    return true;
+                }
+            }
+        }
+        if (!regions.canvas.contains(point)) return false;
+
+        if (workspace_ == Workspace::Operations && button == PointerButton::Left) {
+            OperationDraft& draft = drafts_[operation_cursor_];
+            if (const auto socket = operation_socket_at(
+                    point, regions.canvas, draft.sockets.size())) {
+                draft.active_socket = *socket;
+                draft.last_error.clear();
+                status_ = "active operand socket " + std::to_string(*socket + 1) +
+                          " of " + std::to_string(draft.sockets.size());
+                return true;
+            }
+            if (const auto catalog_index = operation_catalog_at(point, regions.canvas)) {
+                set_operation_cursor(static_cast<int>(*catalog_index));
+            }
+            return true;
+        }
+
+        gesture_ = EditorGesture{};
+        gesture_.start = point;
+        gesture_.previous = point;
+        if (spatial_workspace()) {
+            const std::optional<std::size_t> hit = spatial_.hit_test(world_, point, regions.canvas);
+            if (button == PointerButton::Left && hit) {
+                apply_attention(*hit, modifiers);
+                gesture_.mode = EditorGestureMode::Move3D;
+                gesture_.before = capture_snapshot();
+            } else if (button == PointerButton::Middle || button == PointerButton::Right) {
+                gesture_.mode = modifiers.shift ? EditorGestureMode::Pan3D : EditorGestureMode::Orbit3D;
+            } else {
+                clear_attention();
+                gesture_.mode = EditorGestureMode::Orbit3D;
+            }
+            return true;
+        }
+
+        const std::optional<std::size_t> hit = planar_.hit_test(world_, point, regions.canvas);
+        if (button == PointerButton::Left && hit) {
+            apply_attention(*hit, modifiers);
+            gesture_.mode = EditorGestureMode::Move2D;
+            gesture_.before = capture_snapshot();
+        } else if (button == PointerButton::Left && modifiers.shift) {
+            gesture_.mode = EditorGestureMode::Marquee2D;
+            gesture_.marquee = {point.x, point.y, 0.0, 0.0};
+        } else if (button == PointerButton::Middle || button == PointerButton::Right) {
+            gesture_.mode = EditorGestureMode::Pan2D;
+        } else {
+            clear_attention();
+            gesture_.mode = EditorGestureMode::Pan2D;
+        }
+        return true;
+    }
+
+    bool pointer_move(Vec2 point, RectD client) {
+        if (gesture_.mode == EditorGestureMode::None) return false;
+        const EditorLayout regions = layout(client);
+        const Vec2 delta = point - gesture_.previous;
+        gesture_.previous = point;
+        switch (gesture_.mode) {
+        case EditorGestureMode::Pan2D:
+            planar_.camera().pan_pixels(delta);
+            break;
+        case EditorGestureMode::Move2D:
+            planar_.move_selection(world_, selection_, delta * (1.0 / planar_.camera().zoom));
+            gesture_.changed = true;
+            break;
+        case EditorGestureMode::Marquee2D:
+            gesture_.marquee = normalized_rect(gesture_.start, point);
+            break;
+        case EditorGestureMode::Orbit3D:
+            spatial_.camera().orbit(delta);
+            break;
+        case EditorGestureMode::Pan3D:
+            spatial_.camera().pan_pixels(delta, regions.canvas);
+            break;
+        case EditorGestureMode::Move3D:
+            spatial_.move_selection_in_view(world_, selection_, delta, regions.canvas);
+            gesture_.changed = true;
+            break;
+        default:
+            break;
+        }
+        return true;
+    }
+
+    bool pointer_up(Vec2 point, RectD client) {
+        if (gesture_.mode == EditorGestureMode::None) return false;
+        const EditorLayout regions = layout(client);
+        if (gesture_.mode == EditorGestureMode::Marquee2D) {
+            selection_ = planar_.region_attention(world_, normalized_rect(gesture_.start, point),
+                                                  regions.canvas);
+            update_selection_measure();
+        } else if (gesture_.changed) {
+            commit_history(gesture_.mode == EditorGestureMode::Move3D
+                               ? "move shared work in spatial portrayal"
+                               : "move shared work in planar portrayal",
+                           std::move(gesture_.before));
+        }
+        gesture_ = EditorGesture{};
+        return true;
+    }
+
+    bool pointer_wheel(Vec2 point, double steps, RectD client) {
+        const EditorLayout regions = layout(client);
+        if (!regions.canvas.contains(point)) return false;
+        if (workspace_ == Workspace::Operations) {
+            const int movement = steps > 0.0 ? -11 : 11;
+            set_operation_cursor(static_cast<int>(operation_cursor_) + movement);
+        } else if (spatial_workspace()) {
+            spatial_.camera().dolly(steps);
+        } else {
+            planar_.camera().zoom_at(point, std::pow(1.15, steps), regions.canvas);
+        }
+        return true;
+    }
+
+    bool key_down(UINT key, bool control, bool shift, bool alt, RectD client) {
+        (void)alt;
+        const RectD canvas = layout(client).canvas;
+        if (control && key == 'Z') return undo();
+        if (control && key == 'Y') return redo();
+        if (key >= VK_F1 && key <= VK_F6) {
+            set_workspace(static_cast<Workspace>(key - VK_F1));
+            return true;
+        }
+        if (workspace_ == Workspace::Operations) {
+            if (key == VK_LEFT) set_operation_cursor(static_cast<int>(operation_cursor_) - 11);
+            else if (key == VK_RIGHT) set_operation_cursor(static_cast<int>(operation_cursor_) + 11);
+            else if (key == VK_UP) set_operation_cursor(static_cast<int>(operation_cursor_) - 1);
+            else if (key == VK_DOWN) set_operation_cursor(static_cast<int>(operation_cursor_) + 1);
+            else if (key == VK_TAB) cycle_active_operation_socket(shift ? -1 : 1);
+            else if (key == VK_OEM_PLUS || key == VK_ADD) {
+                adjust_active_operation_operand(control ? 10.0 : 1.0);
+            } else if (key == VK_OEM_MINUS || key == VK_SUBTRACT) {
+                adjust_active_operation_operand(control ? -10.0 : -1.0);
+            } else if (key == 'V') {
+                feed_latest_result_into_active_socket();
+            } else if (key == 'R') {
+                reset_active_operation_draft();
+            } else if (key == VK_RETURN || key == VK_SPACE) {
+                invoke_draft(operation_cursor_);
+            }
+            else return false;
+            return true;
+        }
+        if (key == 'S') return invoke_operation("UNIVERSING");
+        if (key == 'L') return invoke_operation("SPIRALLY");
+        if (key == 'G') return invoke_operation("GIVENS");
+        if (key == 'M') return invoke_operation("FUSING");
+        if (key == 'R' && !control) return invoke_operation("CEREMONIES");
+        if (key == 'F') {
+            if (spatial_workspace()) spatial_.frame_all(world_);
+            else planar_.frame_all(world_, canvas);
+            status_ = "the shared work is framed";
+            return true;
+        }
+        if (key == VK_SPACE) {
+            playing_ = !playing_;
+            status_ = playing_ ? "PRESENTLY: local authored time is moving"
+                               : "authored time is held at the chosen instant";
+            return true;
+        }
+        if (key == VK_ESCAPE) {
+            gesture_ = EditorGesture{};
+            return true;
+        }
+        if (key == VK_TAB) {
+            travel_attention(shift ? -1 : 1);
+            return true;
+        }
+        return false;
+    }
+
+    bool invoke_operation(std::string_view unit_or_code) {
+        const LightDefinition* definition = find_light_by_unit(unit_or_code);
+        if (!definition) definition = find_light_by_code(unit_or_code);
+        if (!definition) {
+            status_ = "the requested operation is outside the current Light catalog";
+            return false;
+        }
+        const std::size_t index = light_catalog_index(*definition);
+        operation_cursor_ = index;
+        const EditorSnapshot before = capture_snapshot();
+
+        if (definition->unit == "UNIVERSING") {
+            ++spin_turn_;
+            planar_.arrange_light(world_, spin_turn_);
+            spatial_.arrange_light(world_, spin_turn_);
+            drain_fractalizer_receipts();
+        } else if (definition->unit == "SPIRALLY") {
+            planar_.apply_authored_spiral(world_);
+            drain_fractalizer_receipts();
+        } else if (definition->unit == "GIVENS") {
+            if (selection_.empty()) select_single(world_.nodes.front().id);
+            planar_.rotate_selection_givens(world_, selection_, pi / 18.0);
+            spatial_.rotate_selection_givens(world_, selection_, pi / 18.0);
+            drain_fractalizer_receipts();
+        } else if (definition->unit == "FUSING") {
+            invoke_authored_order(*definition, false, true);
+        } else if (definition->unit == "SHIFTY") {
+            invoke_authored_order(*definition, true, false);
+        } else if (definition->unit == "CEREMONIES") {
+            invoke_authored_order(*definition, false, false);
+        } else if (definition->unit == "SIZE") {
+            update_selection_measure();
+        } else {
+            if (!invoke_draft(index)) return false;
+        }
+
+        const EditorSnapshot after = capture_snapshot();
+        if (!same_snapshot(before, after)) push_history(std::string(definition->unit), before, after);
+        if (latest_receipt_ && latest_receipt_->catalog_index == index) {
+            OperationDraft& draft = drafts_[index];
+            draft.last_expression = latest_receipt_->expression;
+            draft.last_result = latest_receipt_->result;
+            draft.invoked = true;
+        }
+        status_for_operation(index);
+        return true;
+    }
+
+    bool set_operation_operand(std::size_t catalog_index, std::size_t socket,
+                               Operand value, std::string role) {
+        if (catalog_index >= drafts_.size() || socket >= drafts_[catalog_index].sockets.size()) return false;
+        auto& designation = drafts_[catalog_index].sockets[socket];
+        designation.value = std::move(value);
+        designation.role = std::move(role);
+        drafts_[catalog_index].customized = true;
+        drafts_[catalog_index].last_error.clear();
+        return true;
+    }
+
+    bool use_latest_result(std::size_t catalog_index, std::size_t socket) {
+        if (catalog_index >= drafts_.size() ||
+            socket >= drafts_[catalog_index].sockets.size() || operand_well_.empty()) return false;
+        OperationDraft& draft = drafts_[catalog_index];
+        OperandDesignation& destination = draft.sockets[socket];
+        const Operand& source = operand_well_.back();
+        if (source.body.index() != destination.value.body.index()) {
+            draft.last_error = "latest exact result is not type-compatible with the active socket";
+            status_ = draft.last_error;
+            return false;
+        }
+        destination.value = source;
+        draft.customized = true;
+        draft.last_error.clear();
+        status_ = "latest compatible exact result now feeds the active operand socket";
+        return true;
+    }
+
+    std::vector<const LightDefinition*> search_operations(std::string_view query,
+                                                           std::size_t limit = 24) const {
+        std::string needle(query);
+        std::transform(needle.begin(), needle.end(), needle.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        std::vector<const LightDefinition*> result;
+        for (const LightDefinition& definition : light_catalog) {
+            std::string haystack = std::string(definition.unit) + " " +
+                                   std::string(definition.code) + " " +
+                                   std::string(definition.origin);
+            std::transform(haystack.begin(), haystack.end(), haystack.begin(),
+                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+            if (needle.empty() || haystack.find(needle) != std::string::npos) {
+                result.push_back(&definition);
+                if (result.size() >= limit) break;
+            }
+        }
+        return result;
+    }
+
+private:
+    LightRuntime runtime_{};
+    AuthoredWorld world_{};
+    Fractalizer2D planar_{};
+    Fractalizer3D spatial_{};
+    Workspace workspace_{Workspace::MyLight};
+    std::vector<std::size_t> selection_{};
+    std::vector<OperationDraft> drafts_{};
+    std::vector<AppliedOperation> applied_operations_{};
+    std::optional<AppliedOperation> latest_receipt_{};
+    std::vector<Operand> operand_well_{};
+    std::uint64_t discarded_applied_operations_{};
+    std::vector<EditorHistoryEntry> history_{};
+    std::size_t history_cursor_{};
+    std::size_t operation_cursor_{1};
+    EditorGesture gesture_{};
+    std::string status_{};
+    std::int64_t spin_turn_{};
+    double timeline_time_{};
+    double timeline_duration_{24.0};
+    bool playing_{};
+
+    bool spatial_workspace() const { return workspace_ == Workspace::Fractal3D; }
+
+    EditorSnapshot capture_snapshot() const {
+        EditorSnapshot snapshot;
+        snapshot.nodes.reserve(world_.nodes.size());
+        for (const WorldNode& node : world_.nodes) {
+            snapshot.nodes.push_back({node.id, node.planar, node.spatial, node.extent,
+                                      node.rotation, node.visible, node.locked});
+        }
+        snapshot.authored_order = world_.authored_order;
+        return snapshot;
+    }
+
+    void restore_snapshot(const EditorSnapshot& snapshot) {
+        for (const EditorNodeState& state : snapshot.nodes) {
+            if (WorldNode* node = world_.find(state.id)) {
+                node->planar = state.planar;
+                node->spatial = state.spatial;
+                node->extent = state.extent;
+                node->rotation = state.rotation;
+                node->visible = state.visible;
+                node->locked = state.locked;
+            }
+        }
+        world_.authored_order = snapshot.authored_order;
+        ++world_.revision;
+    }
+
+    static bool same_snapshot(const EditorSnapshot& a, const EditorSnapshot& b) {
+        if (a.nodes.size() != b.nodes.size() || a.authored_order != b.authored_order) return false;
+        for (std::size_t i = 0; i < a.nodes.size(); ++i) {
+            const auto& x = a.nodes[i];
+            const auto& y = b.nodes[i];
+            if (x.planar.x != y.planar.x || x.planar.y != y.planar.y ||
+                x.spatial.x != y.spatial.x || x.spatial.y != y.spatial.y ||
+                x.spatial.z != y.spatial.z || x.extent != y.extent ||
+                x.rotation != y.rotation || x.visible != y.visible || x.locked != y.locked) return false;
+        }
+        return true;
+    }
+
+    void push_history(std::string intention, EditorSnapshot before, EditorSnapshot after) {
+        if (history_cursor_ < history_.size()) history_.erase(history_.begin() + history_cursor_, history_.end());
+        if (history_.size() >= 96) {
+            history_.erase(history_.begin());
+            if (history_cursor_ > 0) --history_cursor_;
+        }
+        history_.push_back({std::move(intention), std::move(before), std::move(after)});
+        history_cursor_ = history_.size();
+    }
+
+    void commit_history(std::string intention, EditorSnapshot before) {
+        const EditorSnapshot after = capture_snapshot();
+        if (!same_snapshot(before, after)) push_history(std::move(intention), std::move(before), after);
+    }
+
+    bool undo() {
+        if (history_cursor_ == 0) return false;
+        --history_cursor_;
+        restore_snapshot(history_[history_cursor_].before);
+        status_ = "technical history returned one complete human intention";
+        return true;
+    }
+
+    bool redo() {
+        if (history_cursor_ >= history_.size()) return false;
+        restore_snapshot(history_[history_cursor_].after);
+        ++history_cursor_;
+        status_ = "technical history reapplied one complete human intention";
+        return true;
+    }
+
+    void count_discarded_receipts(std::uint64_t count) noexcept {
+        const auto maximum = (std::numeric_limits<std::uint64_t>::max)();
+        discarded_applied_operations_ = maximum - discarded_applied_operations_ < count
+            ? maximum : discarded_applied_operations_ + count;
+    }
+
+    void rebuild_operand_well() {
+        operand_well_.clear();
+        operand_well_.reserve(applied_operations_.size());
+        for (const AppliedOperation& applied : applied_operations_) {
+            if (applied.result) operand_well_.push_back(*applied.result);
+        }
+    }
+
+    void update_draft_from_receipt(const AppliedOperation& receipt) {
+        if (receipt.catalog_index >= drafts_.size()) return;
+        OperationDraft& draft = drafts_[receipt.catalog_index];
+        if (draft.invoked && draft.last_expression.value > receipt.expression.value) return;
+        const auto defaults = operator_fixture(world_, light_catalog[receipt.catalog_index].unit);
+        bool customized = defaults.size() != receipt.operands.size();
+        if (!customized) {
+            for (std::size_t socket = 0; socket < defaults.size(); ++socket) {
+                if (defaults[socket].role != receipt.operands[socket].role ||
+                    canonical_operand(defaults[socket].value) !=
+                        canonical_operand(receipt.operands[socket].value)) {
+                    customized = true;
+                    break;
+                }
+            }
+        }
+        draft.sockets = receipt.operands;
+        draft.last_expression = receipt.expression;
+        draft.last_result = receipt.result;
+        draft.invoked = true;
+        draft.customized = customized;
+        draft.active_socket = draft.sockets.empty()
+            ? 0 : (std::min)(draft.active_socket, draft.sockets.size() - 1);
+        draft.last_error = receipt.result ? std::string{}
+            : "authored route retained without an exact result value";
+    }
+
+    void retain_receipt(AppliedOperation receipt) {
+        const auto position = std::lower_bound(
+            applied_operations_.begin(), applied_operations_.end(), receipt.expression.value,
+            [](const AppliedOperation& existing, std::size_t route) {
+                return existing.expression.value < route;
+            });
+        if (position != applied_operations_.end() &&
+            position->expression.value == receipt.expression.value) return;
+        const auto inserted = applied_operations_.insert(position, std::move(receipt));
+        update_draft_from_receipt(*inserted);
+        if (applied_operations_.size() > maximum_retained_receipts) {
+            applied_operations_.erase(applied_operations_.begin());
+            count_discarded_receipts(1);
+        }
+        latest_receipt_ = applied_operations_.empty()
+            ? std::optional<AppliedOperation>{}
+            : std::optional<AppliedOperation>{applied_operations_.back()};
+        rebuild_operand_well();
+    }
+
+    void accept_receipt(const std::optional<AppliedOperation>& receipt) {
+        if (receipt) retain_receipt(*receipt);
+    }
+
+    void drain_fractalizer_receipts() {
+        AppliedReceiptDrain planar_receipts = planar_.take_receipts();
+        AppliedReceiptDrain spatial_receipts = spatial_.take_receipts();
+        count_discarded_receipts(planar_receipts.discarded_before_drain);
+        count_discarded_receipts(spatial_receipts.discarded_before_drain);
+
+        std::vector<AppliedOperation> ordered;
+        ordered.reserve(planar_receipts.ordered.size() + spatial_receipts.ordered.size());
+        for (AppliedOperation& receipt : planar_receipts.ordered) ordered.push_back(std::move(receipt));
+        for (AppliedOperation& receipt : spatial_receipts.ordered) ordered.push_back(std::move(receipt));
+        std::sort(ordered.begin(), ordered.end(), [](const AppliedOperation& left,
+                                                     const AppliedOperation& right) {
+            return left.expression.value < right.expression.value;
+        });
+        for (AppliedOperation& receipt : ordered) retain_receipt(std::move(receipt));
+    }
+
+    void set_operation_cursor(int candidate) {
+        operation_cursor_ = static_cast<std::size_t>(std::clamp(candidate, 0,
+            static_cast<int>(light_catalog.size() - 1)));
+        if (const WorldNode* node = world_.find_unit(light_catalog[operation_cursor_].unit)) {
+            selection_.assign(1, node->id);
+        }
+        status_for_operation(operation_cursor_);
+    }
+
+    void status_for_operation(std::size_t index) {
+        const auto& definition = light_catalog[index];
+        const OperationDraft& draft = drafts_[index];
+        status_ = std::string(definition.unit) + " — " + std::string(definition.signature) +
+                  " — " + std::string(definition.origin) +
+                   (!draft.last_error.empty()
+                        ? " — " + draft.last_error
+                        : draft.invoked
+                        ? " — exact bounded result ready as a nestable operand"
+                        : " — bounded finite exercise ready; result remains nestable");
+    }
+
+    void select_single(std::size_t id) {
+        selection_.assign(1, id);
+        update_selection_measure();
+    }
+
+    void clear_attention() {
+        selection_.clear();
+        update_selection_measure();
+    }
+
+    void apply_attention(std::size_t id, PointerModifiers modifiers) {
+        const auto found = std::find(selection_.begin(), selection_.end(), id);
+        if (modifiers.control) {
+            // BINARISM's assigned exclusive_or operates on the real membership
+            // bit and click bit; its realized truth drives the finite set edit.
+            try {
+                const bool current = found != selection_.end();
+                AuthoredInvocation application = invoke_authored_light(
+                    world_, runtime_, "BINARISM",
+                    {{0, Operand::truth(current), "current attention membership", id, std::nullopt},
+                     {1, Operand::truth(true), "incoming attention toggle", id, std::nullopt}},
+                    "editor attention membership", "toggle one actual authored Light body");
+                accept_receipt(std::optional<AppliedOperation>{application.application});
+                const bool include = application.invocation.value
+                    ? std::get<bool>(application.invocation.value->body) : !current;
+                if (include && found == selection_.end()) selection_.push_back(id);
+                if (!include && found != selection_.end()) selection_.erase(found);
+            } catch (const std::exception&) {
+            }
+        } else if (modifiers.shift) {
+            if (found == selection_.end()) selection_.push_back(id);
+        } else {
+            selection_.assign(1, id);
+        }
+        update_selection_measure();
+    }
+
+    void update_selection_measure() {
+        NameList selected_names;
+        for (std::size_t id : selection_) {
+            if (const WorldNode* node = world_.find(id)) {
+                selected_names.emplace_back(light_catalog[node->catalog_index].unit);
+            }
+        }
+        try {
+            AuthoredInvocation application = invoke_authored_light(
+                world_, runtime_, "SIZE",
+                {{0, Operand::names(std::move(selected_names)),
+                  "currently attended actual Light names", std::nullopt, std::nullopt}},
+                "editor attention count", "measure the finite current attention set");
+            accept_receipt(std::optional<AppliedOperation>{application.application});
+            const std::size_t count = application.invocation.value
+                ? static_cast<std::size_t>(application.invocation.value->as_number()) : selection_.size();
+            status_ = std::to_string(count) + " authored Light bod" + (count == 1 ? "y" : "ies") + " attended";
+        } catch (const std::exception&) {
+            status_ = std::to_string(selection_.size()) + " authored Light bodies attended";
+        }
+    }
+
+    void travel_attention(int direction) {
+        if (world_.authored_order.empty()) return;
+        std::size_t index{};
+        if (!selection_.empty()) {
+            const auto found = std::find(world_.authored_order.begin(), world_.authored_order.end(), selection_.front());
+            if (found != world_.authored_order.end()) index = static_cast<std::size_t>(found - world_.authored_order.begin());
+        }
+        const int count = static_cast<int>(world_.authored_order.size());
+        index = static_cast<std::size_t>((static_cast<int>(index) + direction + count) % count);
+        select_single(world_.authored_order[index]);
+    }
+
+    void cycle_active_operation_socket(int direction) {
+        OperationDraft& draft = drafts_[operation_cursor_];
+        if (draft.sockets.empty()) {
+            draft.last_error = "this authored operator has no operand sockets";
+            status_ = draft.last_error;
+            return;
+        }
+        const int count = static_cast<int>(draft.sockets.size());
+        draft.active_socket = static_cast<std::size_t>(
+            (static_cast<int>(draft.active_socket) + direction + count) % count);
+        draft.last_error.clear();
+        status_ = "active operand socket " + std::to_string(draft.active_socket + 1) +
+                  " of " + std::to_string(draft.sockets.size());
+    }
+
+    void reset_active_operation_draft() {
+        OperationDraft& draft = drafts_[operation_cursor_];
+        draft.sockets = operator_fixture(world_, light_catalog[operation_cursor_].unit);
+        draft.last_result.reset();
+        draft.last_expression = {};
+        draft.invoked = false;
+        draft.customized = false;
+        draft.active_socket = 0;
+        draft.last_error.clear();
+        status_ = "the selected operator sockets are reset to their authored typed fixture";
+    }
+
+    void feed_latest_result_into_active_socket() {
+        OperationDraft& draft = drafts_[operation_cursor_];
+        if (draft.sockets.empty()) {
+            draft.last_error = "this authored operator has no socket for a result operand";
+            status_ = draft.last_error;
+            return;
+        }
+        if (operand_well_.empty()) {
+            draft.last_error = "no retained exact result is available to feed";
+            status_ = draft.last_error;
+            return;
+        }
+        use_latest_result(operation_cursor_, draft.active_socket);
+    }
+
+    void adjust_active_operation_operand(double delta) {
+        OperationDraft& draft = drafts_[operation_cursor_];
+        if (draft.sockets.empty()) {
+            draft.last_error = "this authored operator has no editable operand socket";
+            status_ = draft.last_error;
+            return;
+        }
+        draft.active_socket = (std::min)(draft.active_socket, draft.sockets.size() - 1);
+        Operand& operand = draft.sockets[draft.active_socket].value;
+        constexpr double bound = 1'000'000.0;
+        const auto edit_scalar = [delta](double& value, double low, double high) {
+            if (!std::isfinite(value)) return false;
+            value = std::clamp(value + delta, low, high);
+            return true;
+        };
+        const bool edited = std::visit([&](auto& value) -> bool {
+            using T = std::decay_t<decltype(value)>;
+            if constexpr (std::is_same_v<T, bool>) {
+                value = !value;
+                return true;
+            } else if constexpr (std::is_same_v<T, std::int64_t>) {
+                const long double candidate = static_cast<long double>(value) + delta;
+                value = static_cast<std::int64_t>(std::clamp(
+                    candidate, -static_cast<long double>(bound),
+                    static_cast<long double>(bound)));
+                return true;
+            } else if constexpr (std::is_same_v<T, double>) {
+                return edit_scalar(value, -bound, bound);
+            } else if constexpr (std::is_same_v<T, NumberList>) {
+                return !value.empty() && edit_scalar(value.front(), -bound, bound);
+            } else if constexpr (std::is_same_v<T, ComplexList>) {
+                if (value.empty()) return false;
+                double real = value.front().real();
+                if (!edit_scalar(real, -bound, bound)) return false;
+                value.front() = {real, value.front().imag()};
+                return true;
+            } else if constexpr (std::is_same_v<T, Point2List>) {
+                return !value.empty() && edit_scalar(value.front().x, -bound, bound);
+            } else if constexpr (std::is_same_v<T, Point3List>) {
+                return !value.empty() && edit_scalar(value.front().x, -bound, bound);
+            } else if constexpr (std::is_same_v<T, Vec2> || std::is_same_v<T, Vec3>) {
+                return edit_scalar(value.x, -bound, bound);
+            } else if constexpr (std::is_same_v<T, Matrix>) {
+                return !value.values.empty() && edit_scalar(value.values.front(), -bound, bound);
+            } else if constexpr (std::is_same_v<T, GraphValue>) {
+                return !value.edges.empty() && edit_scalar(value.edges.front().weight, 0.0, bound);
+            } else if constexpr (std::is_same_v<T, ProbabilityValue>) {
+                if (value.weights.empty()) return false;
+                if (!edit_scalar(value.weights.front(), 0.0, bound)) return false;
+                const double total = std::accumulate(value.weights.begin(), value.weights.end(), 0.0);
+                if (!std::isfinite(total) || total <= 0.0) {
+                    value.weights.assign(value.weights.size(), 0.0);
+                    value.weights.front() = 1.0;
+                } else {
+                    for (double& weight : value.weights) weight /= total;
+                }
+                return true;
+            } else if constexpr (std::is_same_v<T, TimeValue>) {
+                return edit_scalar(value.seconds, 0.0, bound);
+            } else if constexpr (std::is_same_v<T, VoronoiDiagram>) {
+                return !value.sites.empty() && edit_scalar(value.sites.front().x, -bound, bound);
+            } else if constexpr (std::is_same_v<T, FreeModuleValue>) {
+                return !value.coordinates.empty() &&
+                    edit_scalar(value.coordinates.front(), -bound, bound);
+            } else {
+                return false;
+            }
+        }, operand.body);
+        if (!edited) {
+            draft.last_error = "this structured operand is preserved; +/- has no honest scalar edit";
+            status_ = draft.last_error;
+            return;
+        }
+        draft.customized = true;
+        draft.last_error.clear();
+        status_ = "the active typed operand changed within the finite +/- bound";
+    }
+
+    bool invoke_draft(std::size_t index) {
+        OperationDraft& draft = drafts_[index];
+        const LightDefinition& definition = light_catalog[index];
+        try {
+            AuthoredInvocation application = invoke_authored_light(
+                world_, runtime_, definition.unit, draft.sockets,
+                "OPERATIONS workspace result socket",
+                draft.customized
+                    ? "execute the selected actual Light operator on edited domain operands"
+                    : "execute the selected actual Light operator on its authored typed fixture");
+            draft.last_expression = application.invocation.expression;
+            draft.last_result = application.invocation.value;
+            draft.invoked = true;
+            accept_receipt(std::optional<AppliedOperation>{application.application});
+            if (!application.invocation.value) {
+                draft.last_error = "the authored operands retained a route but produced no exact result";
+                status_ = draft.last_error;
+                return false;
+            }
+            draft.last_error.clear();
+            status_ = std::string(definition.unit) +
+                      " produced an exact result through invoke_authored_light";
+            return true;
+        } catch (const std::exception& error) {
+            draft.last_error = error.what();
+            status_ = error.what();
+            return false;
+        }
+    }
+
+    void invoke_authored_order(const LightDefinition& definition, bool shift, bool mix) {
+        NameList actual_order;
+        actual_order.reserve(world_.authored_order.size());
+        for (std::size_t id : world_.authored_order) {
+            if (const WorldNode* node = world_.find(id)) actual_order.emplace_back(light_catalog[node->catalog_index].unit);
+        }
+        std::vector<OperandDesignation> operands;
+        operands.push_back({0, Operand::names(actual_order), "current exact authored order",
+                            std::nullopt, std::nullopt});
+        if (shift) operands.push_back({1, Operand::integer(1), "requested cyclic step",
+                                      std::nullopt, std::nullopt});
+        if (mix) operands.push_back({1, Operand::integer(0x4D494C45), "chosen deterministic reordering offset",
+                                    std::nullopt, std::nullopt});
+        try {
+            AuthoredInvocation application = invoke_authored_light(
+                world_, runtime_, definition.unit, std::move(operands),
+                "shared authored order and both portrayals",
+                "apply the selected order mathematics to the actual Light body order");
+            accept_receipt(std::optional<AppliedOperation>{application.application});
+            if (application.invocation.value) {
+                if (const NameList* names = std::get_if<NameList>(&application.invocation.value->body)) {
+                    std::vector<std::size_t> reordered;
+                    reordered.reserve(names->size());
+                    for (const std::string& name : *names) {
+                        if (const WorldNode* node = world_.find_unit(name)) reordered.push_back(node->id);
+                    }
+                    if (reordered.size() == world_.authored_order.size()) world_.authored_order = std::move(reordered);
+                }
+            }
+            ++world_.revision;
+        } catch (const std::exception& error) {
+            status_ = error.what();
+        }
+    }
+};
+
+} // namespace milesing
+
+#endif // MILESING_EDITOR_INCLUDED

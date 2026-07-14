@@ -1,0 +1,77 @@
+DIRECTX, DIRECT2D, AND DIRECTWRITE CONCEPT SPACE
+
+PURPOSE
+One original renderer manifests the same Light-authored world as deep 3D, close 2D, exact text, mathematics, generated geometry, nested portals, media surfaces, time, and accessible visual attention.
+
+NATIVE GRAPHICS BODY
+- Direct3D 11 device: local GPU drawing, buffers, textures, shaders, instancing, depth, offscreen worlds, and later bounded compute.
+- DXGI swap chain: presents the native window and exposes a shared surface for Direct2D.
+- Direct2D device context: vector bodies, relations, curves, filled regions, handles, guides, selection, panels, timelines, and generated 2D.
+- DirectWrite: Unicode shaping, bidirectional layout, hit testing, glyph measurement, readable scaling, text styles, and exact text portrayal.
+- DirectComposition opening: later independent visual movement and effects when it improves responsiveness without dividing authored work.
+- WIC opening: deliberate local images and generated bitmap output.
+
+RENDER PATH
+1. Receive one portrayal request from the shared authored world.
+2. Determine requested workspace, camera, scale, purpose, detail, accessible emphasis, and finite graphics allowance.
+3. Traverse only the required authored relations and rooted expression portions.
+4. Build disposable line, shape, glyph, image, mesh, and temporal batches.
+5. Draw 3D and generated surfaces to D3D targets.
+6. Draw 2D, text, math, command surfaces, and semantic emphasis through D2D/DirectWrite on the shared DXGI surface.
+7. Present, receipt resource use, and retain only the authored cause or explicitly reusable local resource.
+
+2D FEATURES
+- Infinite-feeling pan/zoom through camera transforms and purpose-sized detail.
+- Shapes, freehand paths, tables, images, exact text, math bodies, relations, waypoints, arrow portrayal, crossings, grouping, pages, layers, guides, snapping, alignment, distribution, routing, overview, minimap, and print/export opening.
+- Node and relation attention by point, region, text range, query, authored relation, and keyboard traversal.
+- Direct manipulation with preview, constraint portrayal, commitment, cancellation, reversal, and reapplication.
+- Layout algorithms operate on authored geometry and return positions as authored results, never as hidden source-product structures.
+
+3D FEATURES
+- Perspective and orthographic cameras, orbit, pan, dolly, focus, frame, return, and authored camera paths.
+- CPU/GPU projection with exact authored coordinates retained beneath graphics floats.
+- Ray attention, region attention, depth order, nearest/frontmost rules, handles, axes, grids, and transform gizmos.
+- Complete 2D work rendered into an offscreen target and placed as an editable portal in 3D.
+- Complete 3D work projected into a 2D portal with an exact route back.
+- Generated stars, spirals, fractals, relation ribbons, particle-like authored portrayals, spatial logs, materials, light, and bounded shaders.
+- Level of detail follows requested purpose and scale; the authored graph remains whole.
+
+TEXT AND MATHEMATICS
+- DirectWrite IDWriteTextLayout performs shaping, measurement, bidirectional layout, styling, and hit testing.
+- The original text editor owns caret movement, grapheme attention, selection, composition, commands, and authored changes.
+- The original math layout owns fractions, powers, roots, matrices, operators, grouping, operand sockets, and expression inspection.
+- Text stays text and mathematics stays structured mathematics; rasterization is a disposable portrayal.
+
+TIME AND MEDIA
+- Authored temporal relations drive tracks, keys, easing, reversible playback, view transitions, and generated manifestations.
+- WIC supplies chosen images; Media Foundation and WASAPI open chosen audio/video when a purpose invokes them.
+- Media frames and decoded samples remain bounded, cancellable, and disposable unless deliberately retained.
+
+DEVICE CARE
+- Recreate swap-chain targets after resize.
+- Recreate device-dependent resources after device removal while authored work remains intact.
+- Bound vertices, indices, glyph layouts, textures, render targets, view depth, portal recursion, frame work, and caches.
+- Keep shaders embedded and package-visible.
+
+LIGHT INSIDE THE RENDERER
+- EARTH CITY `voronoi` calculates authored nearest-center regions used by spatial layout and attention when supplied point sites fit its domain.
+- SPIRALLY `log_spiral` generates actual planar or projected spatial geometry from supplied `a`, `b`, and `theta`.
+- FRACTALLY `hutchinson` forms requested compact-shape images from supplied contraction maps; the renderer materializes only the requested finite stage.
+- GIVENS `givens_rotation` supplies exact plane rotations used inside camera, gizmo, and matrix work for a supplied pair.
+- CARA `face_map` obtains a requested simplex face for mesh and portal geometry.
+- QUEST `astar_path` finds a least-cost authored graph route for visible wayfinding under an admissible heuristic.
+- FILTERAGE `filtration_at` reveals the supplied complex at the requested threshold for detail and temporal portrayal.
+- SAFETY `safe_gfp` retains render-plan positions whose declared successors remain inside supplied allowances.
+- TIMELY `maxplus_mv` propagates declared dependency completion times through render and animation work.
+- PSYCHE `dft` transforms an exact finite signal for a requested frequency portrayal; TRACKA `dtw_path` aligns supplied temporal signals.
+- ALLAGE `fold_all` combines a finite render batch under an explicitly associative combine and unit.
+- FUSING `mix` changes authored portrayal order only through an authored chooser or retained reproducible seed.
+- GROWING `growth` repeats one admitted generation step for a finite live count while the greater expression stays symbolic.
+- Each call is executed by the shared C++ Light dispatcher from inside layout, camera, geometry, scheduler, and draw code; the rendered result retains divinand and its authored route.
+
+MICROSOFT REFERENCE
+https://learn.microsoft.com/en-us/windows/win32/direct3d11/atoc-dx-graphics-direct3d-11
+https://learn.microsoft.com/en-us/windows/win32/direct2d/direct2d-overview
+https://learn.microsoft.com/en-us/windows/win32/Direct2D/direct2d-and-direct3d-interoperation-overview
+https://learn.microsoft.com/en-us/windows/win32/direct2d/direct2d-and-directwrite
+https://learn.microsoft.com/en-us/windows/win32/directwrite/direct-write-portal

@@ -1,0 +1,53 @@
+WINDOWS PRIMITIVES CONCEPT SPACE
+
+PURPOSE
+These are the direct operating-system openings used by the original C++ Light application. Each primitive serves a visible application result and stays beneath authored meaning.
+
+INTEGRATION LAW
+Every Windows call enters from a C++ function already carrying the actual Light expression, operands, authored purpose, finite allowance, and divinand when Milesing mathematics governs the work. Windows returns handles, messages, surfaces, bytes, timing, glyphs, media samples, or assistive actions; the Light operation determines their meaningful organization and further use.
+
+DESKTOP AND INPUT
+- User32: window class, message loop, DPI, pointer, keyboard, focus, cursor, timer, and explicit system clipboard export.
+- TSF/IMM: multilingual composition, candidate text, text-store updates, and input scopes.
+- OLE/COM: lifetime and interface transport for DirectX, WIC, UI Automation, TSF, and selected local drag/drop.
+
+GRAPHICS, TEXT, AND MEDIA
+- D3D11 + DXGI: GPU device, swap chain, buffers, textures, shaders, targets, queries, presentation, and device recovery.
+- D2D1: vector geometry, paths, strokes, fills, effects, transformed portrayal, and 2D-over-3D interoperation.
+- DWrite: fonts, shaping, layout, glyph runs, hit testing, bidirectional text, custom fonts, and readable scaling.
+- WIC: bounded image decode, transform, color conversion, metadata inspection, and deliberate image encode.
+- Media Foundation: purpose-invoked local video/audio decoding and timing.
+- WASAPI: purpose-invoked local audio output with finite buffers and explicit device opening.
+
+FILES AND PATHS
+- CreateFileW/ReadFile/WriteFile: exact selected local handles and durable candidates.
+- FlushFileBuffers: send a completed candidate to the filesystem boundary before replacement.
+- ReplaceFileW: replace a current work with a complete candidate while producing a protected prior copy on the same volume.
+- GetFileInformationByHandleEx: inspect type, size, and local file facts from the opened handle.
+- GetFinalPathNameByHandleW and PathCch: resolve and validate the chosen local route.
+- FindFirstFileExW/FindNextFileW: application-owned local browser with bounded enumeration.
+- GetDriveTypeW: show fixed/removable/RAM/local optical roots while excluding remote roots from the private browser.
+
+INTEGRITY AND PROTECTION
+- BCrypt SHA-256: hash chunks, manifests, candidates, prior bodies, packages, and reopened works.
+- BCrypt random generation: salts, nonces, and chooser seeds where reproducible evidence is retained.
+- BCrypt symmetric encryption: separately approved authenticated local protection.
+- NCrypt/DPAPI opening: optional local key custody only after the exact recovery and portability choice is made.
+- WinVerifyTrust: verify deliberately admitted signed local executable supply.
+
+PERFORMANCE AND TIME
+- QueryPerformanceCounter: frame, animation, derivation, cancellation, and authored-duration timing.
+- Thread pool or std::jthread: bounded cancellable work.
+- VirtualAlloc or bounded arenas: large transient mathematical/geometry bodies with explicit release.
+- PSAPI/process counters: application-caused work evidence or later exact-grant operands; never automatic ambient collection.
+
+ACCESSIBILITY AND SHELL BOUNDARY
+- UI Automation provider interfaces: semantic access to the original custom application.
+- Shell file dialogs are not the private intake foundation because the shell namespace can expose remote places; the app-owned browser uses direct local file primitives.
+- URL launch, HTTP, sockets, telemetry, accounts, update polling, and remote assets have no route in the private body.
+
+MICROSOFT REFERENCE
+https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-writefile
+https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-flushfilebuffers
+https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-replacefilew
+https://learn.microsoft.com/en-us/windows/win32/seccng/cng-portal

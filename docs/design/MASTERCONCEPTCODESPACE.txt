@@ -1,0 +1,80 @@
+MASTER CONCEPT CODE SPACE
+
+THIS IS THE DIRECT APP LIST
+The Light, C++20, Win32, DirectX, Draw.io concepts, Godot concepts, storage, machine participation, and the editor are one program. Microsoft APIs provide physical openings. Milesing mathematics organizes those openings inside the source code whenever the documented mathematical domain fits. Ordinary platform work keeps ordinary technical mathematics. No reference product becomes the engine or architecture.
+
+ACTUAL OPERAND BINDING
+Every named Light unit is the actual self-number/conceptual body. Its assigned operator and mathematical-system origin are properties of that body, not replacements for it. No Light name call counts by itself. Every live application resolves the operator through the actual authored unit route, designates the real app operands by value, authored or machine route, mathematical role, and spatial/temporal position, retains the exact expression/result relation, consumes the result in the feature, and makes the current binding inspectable. SPIRALLY remains the authored SPIRALLY body while its plane-differential-geometry `log_spiral` operator acts on supplied operands and its result may affect portrayal. The same unit -> operator/origin -> operands -> result -> consumer relation applies everywhere. Arbitrary decorative calls and reductions of a unit to its returned value are excluded.
+
+OPERATOR EVOLUTION CONTRACT
+Every current assigned operator has a genuine bounded finite C++ implementation in its proper mathematical domain and can operate individually through its actual authored unit body. Symbolic expressions preserve composition, a request beyond present finite bounds, and residual work; they never substitute for a unit's unique branch of functionality. Evolution work deepens testing, operand domains, performance, and safe tandem composition among many operators without changing their authored identities or existing finite meanings.
+
+SOURCE BODY
+APP.txt — includes the complete source body, creates the native window, routes messages, and keeps every feature operating together.
+SUPPORT.txt — actual 111-entry Light registry, typed operands, callable/symbolic expressions, authored worlds, commands, compact recipes, hashes, writing, and recovery helpers.
+SYSTEMLOGS.txt — shallow bit-position-operand-hardware relation; synthetic values now and exact-grant acquisition only when deliberately opened.
+2DFRACTALIZER.txt — planar language, direct authorship, text/math, relations, arrangement, search, and 3D portal requests.
+3DFRACTALIZER.txt — spatial language, cameras, picking, generated geometry, navigation, time, and 2D portal requests.
+EDITOR.txt — workspaces, semantic commands, input, attention, preview, commitment, history, inspector, timeline, and accessibility model.
+RENDERER.txt — D3D11/DXGI/D2D/DirectWrite/WIC manifestation of the shared authored world.
+
+COMPLETE FEATURE ROUTES
+1. Native opening — visible private desktop window, per-monitor DPI, message loop, focus, pointer, keyboard, TSF/IME, ordinary Windows security. CODE: APP + EDITOR + RENDERER. MS: Win32/COM.
+2. Actual Light catalog — MY LIGHT divinand plus every main class and subclass stored once by actual name, parent, codable expression, origin, arity, and callable contract. CODE: SUPPORT; consumed everywhere.
+3. Typed operands — number, truth, text, ordered names/values, point, vector, matrix, graph, relation, probability, time, resource, authored-body route, expression route, and later exact-grant measure. CODE: SUPPORT.
+4. Executable expressions — construct and inspect every valid call; calculate supported finite domains; preserve the others as real symbolic recipes that can later realize requested portions. CODE: SUPPORT + EDITOR + both FRACTALIZERS.
+5. Recursive composition — AUTHORIALLY term, DESIGNING group, METHODICALLY compose, COMMANDSEA action prefix, RECURSIONS primitive recursion, GROWFLY iterate, GROWING growth, and PLUGINS operadic substitution operate on typed compatible inputs. CODE: SUPPORT.
+6. Divinand — every authored application returns the required whole, actual Light/source route, operands, purpose, recipe, portrayal route, and recovery opening. CODE: every source file.
+7. Shared authored world — conceptual bodies, meaningful wholes, relations among relations, exact text/math, 2D/3D placement, time, media, portals, operations, provenance, and compact recipes. CODE: SUPPORT.
+8. MY LIGHT world — center, actual central classes, actual subclasses, functions, and authored branch relations generated from the registry rather than a detached visual map. CODE: SUPPORT + both FRACTALIZERS + RENDERER.
+9. Workspaces — MY LIGHT, 2D FRACTAL, 3D FRACTAL, OPERATIONS, TIME/MEDIA, and SYSTEM RELATION are different encounters with the same work. CODE: EDITOR + APP.
+10. Planar camera — pan, zoom, fit, exact coordinates, grid, guides, minimap, progressive detail. LIGHT: add/sub/mul/div, WHYS preimage, FILTERAGE. CODE: 2DFRACTALIZER + RENDERER.
+11. Spatial camera — orbit, pan, dolly, perspective/orthographic, frame, focus, bookmarks, projection. LIGHT: GIVENS rotation, compose, eval_at, forward_diff. CODE: 3DFRACTALIZER + RENDERER.
+12. Attention — point, ray, rectangle, lasso, text, relation, plural attention, keyboard traversal, source lookup. LIGHT: preimage, convex hull, emptiness, cardinality, existential witness. CODE: both FRACTALIZERS + EDITOR.
+13. Direct editing — create, move, scale, rotate, resize, rename, connect, disconnect, delete, duplicate, group, release, order, lock, exact properties. LIGHT calls occur inside transforms and graph commands where real. CODE: EDITOR + SUPPORT + both FRACTALIZERS.
+14. Text and mathematics — Unicode, bidirectional text, caret/ranges, TSF/IME, rich spans, structured math layout, expression completion, operand sockets, result routes. CODE: EDITOR + RENDERER + SUPPORT. MS: DirectWrite/TSF/UIA.
+15. Relations — ports, anchors, waypoints, converse, automatic/manual routing, labels, crossings, measurements, splitting, relations among relations. LIGHT: CONISM, QUEST, TENSIONS, CRIES, optional stable matching. CODE: SUPPORT + 2DFRACTALIZER.
+16. Arrangement — align, distribute, hierarchy, tree, radial, Light Spin, spiral, Voronoi, fractal, rewriting, organic, exact-cover, Pareto choices. LIGHT: HIERARCHY, UNIVERSING, SPIRALLY, EARTH CITY, FRACTALLY, CREATIVITY, PUZZLER, BEST. CODE: both FRACTALIZERS.
+17. Generated geometry — compact mathematical cause becomes requested vertices, indices, paths, relation ribbons, stars, fields, and finite recursive detail. LIGHT: log spiral, Hutchinson, L-system, Rule 30, growth, Givens, face map. CODE: both FRACTALIZERS + RENDERER.
+18. 2D/3D portals — complete 2D work in 3D and complete 3D work in 2D through bounded render targets, exact route, return, and same authored changes. CODE: both FRACTALIZERS + RENDERER + EDITOR.
+19. Renderer — purpose-sized D3D/D2D/DWrite frame; nested targets; generated geometry; text/math; images; selection; accessible emphasis; device recreation. LIGHT: FILTERAGE detail, SAFETY reachable plan, TIMELY dependencies, ALLAGE batches. CODE: RENDERER.
+20. Time and animation — tracks, keys, curves, playback, scrub, loop, markers, camera motion, repeated operations, presentation. LIGHT: PRESENTLY, CHANGELY, MEMORY, TIMELY, TRACKA, PROMAGE, growth/iterate. CODE: EDITOR + both FRACTALIZERS + RENDERER.
+21. Images — deliberate local WIC decode, crop, transform, color, texture, generated output, metadata preview. LIGHT applies only to real supplied image/math domains. CODE: RENDERER + SUPPORT.
+22. Audio/video — deliberate local Media Foundation/WASAPI opening, time, frames, textures, waveforms, loudness, frequency, alignment. LIGHT: PSYCHE DFT, LOUDA decibel, MEDIA median, TRACKA. CODE: RENDERER + EDITOR when admitted.
+23. Search — commands, Light words, authored bodies, text, properties, tags, pages, layers, relations, resources, routes, shared attributes. LIGHT: preimage, concept closure, A-star. CODE: EDITOR + SUPPORT.
+24. Private transfer — application-local fragments; explicit system clipboard export; local drag/drop and chosen files; exact preview before admission. CODE: EDITOR + APP + SUPPORT.
+25. Intake — bounded original readers translate selected foreign graphs/images/media to the authored world; foreign structures never become canonical. CODE: SUPPORT + RENDERER.
+26. Output — native authored work, images, SVG/text/data, presentation frames, print/PDF route, exact inclusion preview. CODE: SUPPORT + RENDERER + EDITOR.
+27. History — one human intention, preview, commitment/cancellation, technical inverse, reapplication, comparison. CEREMONIES reverse remains mathematical authored-order reversal. CODE: EDITOR + SUPPORT.
+28. Writing — canonical chunks for actual Light expressions, worlds, relations, recipes, resources, and receipts; candidate, flush, hash, reopen, protected prior, replacement, final reopen. CODE: SUPPORT. MS: file primitives/CNG/ReplaceFileW.
+29. Recovery/migration — inspect final/prior/candidate bodies, open deliberate choice, regenerate caches, transform prior generations into a new protected candidate, compare and retain receipts. CODE: SUPPORT + EDITOR.
+30. Accessibility — same command and authored-world model exposed through keyboard, readable scaling, contrast, reduced motion, focus, UIA fragments, Invoke/Selection/Value/Text/Scroll/Transform patterns. CODE: EDITOR + APP + RENDERER.
+31. Resources — typed shared images/meshes/materials/fonts/media/expressions/worlds, dependency wakeups, bounded background local loading, clean release. CODE: SUPPORT + RENDERER.
+32. Diagnostics — app-caused frame/work/resource counts, operation receipts, render views, errors, recovery facts, and optional exact-grant measures. LIGHT: SIZE, CHANGELY, ALLAGE, PSYCHE where domains fit. CODE: SYSTEMLOGS + RENDERER + EDITOR.
+33. Bit-rooted machine relation — technical bit occurrence + authored spatial position + relations to actual Light units + operand positions/order + rooted expression + purpose + synthetic or exact-grant hardware levels + duration + divinand. CODE: SYSTEMLOGS + SUPPORT + both FRACTALIZERS.
+34. Machine permission — each launch begins dormant; a later grant names one source, quantity, unit, sample rule, duration, expression, operand role, retention, and expiry. CODE: SYSTEMLOGS. No generalized logger.
+35. Resource bounds — finite graph visits, recursion, expressions, CPU work, GPU bodies, memory, textures, portal depth, files, outputs, and duration; cancellation returns the symbolic remainder. CODE: every source file.
+36. Offline package — one native executable, declared Windows imports, embedded shaders/font/assets, local documentation, original authored format, zero server/account/telemetry/updater/network route. CODE: APP + all included source.
+
+FIRST LIVING BUILD
+- Open a luminous MY LIGHT world built from the actual registry.
+- Switch instantly among MY LIGHT, 2D, 3D, OPERATIONS, TIME/MEDIA, and SYSTEM RELATION.
+- Pan, zoom, orbit, attend, inspect, and edit actual conceptual bodies.
+- Invoke real Light functions from keyboard/command surface and see their results alter the shared world.
+- Use SPIRALLY and FRACTALLY geometry, UNIVERSING Spin, authored mix/shift/reverse, and bounded growth.
+- Open a 2D portal in 3D and a 3D portal in 2D.
+- Root one synthetic machine relation through a bit occurrence while live acquisition stays dormant.
+- Write and reopen the compact authored world through the recoverable local route.
+- Run visibly as one private native Windows application.
+
+REFERENCE DOCUMENTS
+OPERATORWORKSPACE.txt - all 111 actual unit/operator bodies mapped to bounded C++ work and first application use.
+DRAWIOSPACE.txt — complete direct-authorship concept list.
+GODOTSPACE.txt — complete spatial/live-manifestation concept list.
+ISOC++20SPACE.txt — language and executable-Light body.
+WIN32SPACE.txt — native window/input/workspace body.
+DIRECTSSPACES.txt — renderer and manifestation body.
+WICSPACE.txt — image body.
+WINDOWSUIAUTOSPACE.txt — assistive body.
+WINPRIMITIVESSPACE.txt — direct OS openings.
+STORAGESPACE.txt, INTEGRITYSPACE.txt, REPLACEMENTSPACE.txt, RECOVERYSPACE.txt, MIGRATIONLOGICSPACE.txt — permanent local authored work.

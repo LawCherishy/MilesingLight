@@ -1,0 +1,1159 @@
+#ifndef MILESING_RENDERER_INCLUDED
+#define MILESING_RENDERER_INCLUDED 1
+
+namespace milesing {
+
+struct PortrayalPlan {
+    std::size_t admitted_bodies{};
+    std::size_t visible_limit{};
+    double allocation_fairness{1.0};
+    NumberList pass_completion;
+    float detail{1.0f};
+    float glow{1.0f};
+    AppliedOperation cardinality_route{};
+    AppliedOperation fairness_route{};
+    AppliedOperation dependency_route{};
+    std::string divinand;
+};
+
+enum class FrameCompletion : std::uint8_t { Presented, Recovered, Failed };
+
+class Renderer final {
+public:
+    Renderer() = default;
+    Renderer(const Renderer&) = delete;
+    Renderer& operator=(const Renderer&) = delete;
+
+    ~Renderer() { release(); }
+
+    bool initialize(HWND window, std::uint32_t width, std::uint32_t height, float dpi) {
+        window_ = window;
+        width_ = std::max<std::uint32_t>(1, width);
+        height_ = std::max<std::uint32_t>(1, height);
+        dpi_ = dpi > 0.0f ? dpi : 96.0f;
+        return create_independent_resources() && create_device_resources() && create_window_resources();
+    }
+
+    void release() noexcept {
+        abort_frame();
+        release_window_resources();
+        accent_brush_.Reset();
+        warm_brush_.Reset();
+        text_muted_brush_.Reset();
+        text_brush_.Reset();
+        panel_brush_.Reset();
+        surface_brush_.Reset();
+        d2d_context_.Reset();
+        d2d_device_.Reset();
+        swap_chain_.Reset();
+        d3d_context_.Reset();
+        d3d_device_.Reset();
+        write_factory_.Reset();
+        d2d_factory_.Reset();
+        title_format_.Reset();
+        heading_format_.Reset();
+        label_format_.Reset();
+        small_format_.Reset();
+        mono_format_.Reset();
+        window_ = nullptr;
+    }
+
+    bool resize(std::uint32_t width, std::uint32_t height, float dpi) {
+        if (dpi > 0.0f) {
+            dpi_ = dpi;
+            if (d2d_context_) d2d_context_->SetDpi(dpi_, dpi_);
+        }
+        if (width == 0 || height == 0) {
+            occluded_ = true;
+            return true;
+        }
+
+        occluded_ = false;
+        if (width == width_ && height == height_ && target_bitmap_) return true;
+        width_ = width;
+        height_ = height;
+        release_window_resources();
+        if (!swap_chain_) return recreate_device();
+
+        const HRESULT result = swap_chain_->ResizeBuffers(0, width_, height_, DXGI_FORMAT_UNKNOWN, 0);
+        if (is_device_loss(result)) return recreate_device();
+        if (FAILED(result)) return false;
+        return create_window_resources();
+    }
+
+    void set_dpi(float dpi) noexcept {
+        if (dpi <= 0.0f) return;
+        dpi_ = dpi;
+        if (d2d_context_) d2d_context_->SetDpi(dpi_, dpi_);
+    }
+
+    std::uint32_t pixel_width() const noexcept { return width_; }
+    std::uint32_t pixel_height() const noexcept { return height_; }
+    float dpi() const noexcept { return dpi_; }
+    float scale() const noexcept { return dpi_ / 96.0f; }
+    bool occluded() const noexcept { return occluded_; }
+
+    const PortrayalPlan& plan_frame(LightRuntime&, const AuthoredWorld& world,
+                                    std::uint64_t cause_revision,
+                                    const NameList& admitted_bodies,
+                                    NumberList pass_allocations,
+                                    Matrix pass_dependencies) {
+        if (plan_valid_ && cause_revision == planned_revision_) return portrayal_;
+
+        // Frame planning is a recomputable portrayal concern.  Keep its three
+        // Light expressions in a private ephemeral runtime so pointer/camera
+        // invalidations never consume the authored editor history.  The
+        // AppliedOperation receipts below retain their exact operands/results.
+        plan_runtime_.clear();
+
+        if (pass_allocations.empty()) pass_allocations = {1.0};
+        for (double& allocation : pass_allocations) {
+            if (!std::isfinite(allocation) || allocation < 0.0) allocation = 0.0;
+        }
+        if (!pass_dependencies.valid() || pass_dependencies.rows != pass_allocations.size() ||
+            pass_dependencies.columns != pass_allocations.size()) {
+            const std::size_t extent = pass_allocations.size();
+            pass_dependencies = Matrix{extent, extent, NumberList(extent * extent, -1.0)};
+            for (std::size_t i = 0; i < extent; ++i) {
+                pass_dependencies.values[i * extent + i] = 0.0;
+                if (i > 0) pass_dependencies.values[i * extent + i - 1] = 1.0;
+            }
+        }
+
+        AuthoredInvocation cardinality_application = invoke_authored_light(
+            world, plan_runtime_, "SIZE",
+            {{0, Operand::names(admitted_bodies), "actual admitted authored body names", std::nullopt, std::nullopt}},
+            "renderer visible-body allowance",
+            "bound the visible authored traversal without changing the whole world");
+        AuthoredInvocation fairness_application = invoke_authored_light(
+            world, plan_runtime_, "FAIRINS",
+            {{0, Operand::numbers(pass_allocations), "finite graphics pass allocations", std::nullopt, std::nullopt}},
+            "renderer pass detail and glow allocation",
+            "give the admitted vector, text, relation, portal, and status passes a fair finite share");
+        AuthoredInvocation dependency_application = invoke_authored_light(
+            world, plan_runtime_, "TIMELY",
+            {{0, Operand::matrix(std::move(pass_dependencies)), "finite pass dependency matrix", std::nullopt, std::nullopt},
+             {1, Operand::numbers(pass_allocations), "current pass readiness vector", std::nullopt, std::nullopt}},
+            "renderer pass and timeline completion",
+            "propagate completion through the actual finite render-pass dependency body");
+        const Invocation& cardinality = cardinality_application.invocation;
+        const Invocation& fairness = fairness_application.invocation;
+        const Invocation& dependencies = dependency_application.invocation;
+
+        std::size_t count = admitted_bodies.size();
+        if (cardinality.value) {
+            if (const auto* integer = std::get_if<std::int64_t>(&cardinality.value->body)) {
+                count = *integer > 0 ? static_cast<std::size_t>(*integer) : 0;
+            } else if (cardinality.value->numeric()) {
+                count = static_cast<std::size_t>((std::max)(0.0, cardinality.value->as_number()));
+            }
+        }
+
+        double fairness_value = 1.0;
+        if (fairness.value && fairness.value->numeric()) {
+            fairness_value = std::clamp(fairness.value->as_number(), 0.0, 1.0);
+        }
+
+        NumberList completion;
+        if (dependencies.value) {
+            if (const auto* values = std::get_if<NumberList>(&dependencies.value->body)) {
+                completion = *values;
+            }
+        }
+        if (completion.empty()) completion = pass_allocations;
+
+        portrayal_.admitted_bodies = count;
+        portrayal_.visible_limit = (std::min<std::size_t>)(count, 768);
+        portrayal_.allocation_fairness = fairness_value;
+        portrayal_.pass_completion = std::move(completion);
+        portrayal_.detail = static_cast<float>(0.42 + 0.58 * fairness_value);
+        portrayal_.glow = static_cast<float>(0.55 + 0.45 * fairness_value);
+        portrayal_.cardinality_route = std::move(cardinality_application.application);
+        portrayal_.fairness_route = std::move(fairness_application.application);
+        portrayal_.dependency_route = std::move(dependency_application.application);
+        portrayal_.divinand =
+            "admitted authored bodies + fair finite pass allocation + dependency completion + visible result";
+        planned_revision_ = cause_revision;
+        plan_valid_ = true;
+        return portrayal_;
+    }
+
+    void invalidate_plan() noexcept { plan_valid_ = false; }
+    const PortrayalPlan& portrayal_plan() const noexcept { return portrayal_; }
+
+    D2D1_SIZE_F logical_size() const noexcept {
+        const float factor = scale();
+        return D2D1::SizeF(static_cast<float>(width_) / factor,
+                           static_cast<float>(height_) / factor);
+    }
+
+    bool begin_frame(const Color& clear) {
+        if (drawing_ || occluded_) return false;
+        if (!d2d_context_ || !target_bitmap_) {
+            if (!recreate_device()) return false;
+        }
+
+        const float color[4]{clear.r, clear.g, clear.b, clear.a};
+        if (d3d_context_ && backbuffer_view_) {
+            d3d_context_->ClearRenderTargetView(backbuffer_view_.Get(), color);
+        }
+
+        d2d_context_->BeginDraw();
+        drawing_ = true;
+        d2d_context_->SetTransform(D2D1::Matrix3x2F::Identity());
+        return true;
+    }
+
+    FrameCompletion end_frame() {
+        if (!drawing_ || !d2d_context_ || !swap_chain_) return FrameCompletion::Failed;
+        drawing_ = false;
+        const HRESULT draw_result = d2d_context_->EndDraw();
+        if (draw_result == D2DERR_RECREATE_TARGET || is_device_loss(draw_result)) {
+            return recreate_device() ? FrameCompletion::Recovered : FrameCompletion::Failed;
+        }
+        if (FAILED(draw_result)) return FrameCompletion::Failed;
+
+        const HRESULT present_result = swap_chain_->Present(1, 0);
+        if (present_result == DXGI_STATUS_OCCLUDED) {
+            occluded_ = true;
+            return FrameCompletion::Presented;
+        }
+        if (is_device_loss(present_result)) {
+            return recreate_device() ? FrameCompletion::Recovered : FrameCompletion::Failed;
+        }
+        return SUCCEEDED(present_result) ? FrameCompletion::Presented : FrameCompletion::Failed;
+    }
+
+    void abort_frame() noexcept {
+        if (!drawing_) return;
+        drawing_ = false;
+        if (!d2d_context_) return;
+        const HRESULT result = d2d_context_->EndDraw();
+        if (FAILED(result)) release_window_resources();
+    }
+
+    ID2D1DeviceContext* context() const noexcept { return d2d_context_.Get(); }
+    IDWriteFactory* write_factory() const noexcept { return write_factory_.Get(); }
+
+    ID2D1SolidColorBrush* surface_brush() const noexcept { return surface_brush_.Get(); }
+    ID2D1SolidColorBrush* panel_brush() const noexcept { return panel_brush_.Get(); }
+    ID2D1SolidColorBrush* text_brush() const noexcept { return text_brush_.Get(); }
+    ID2D1SolidColorBrush* muted_brush() const noexcept { return text_muted_brush_.Get(); }
+    ID2D1SolidColorBrush* warm_brush() const noexcept { return warm_brush_.Get(); }
+    ID2D1SolidColorBrush* accent_brush() const noexcept { return accent_brush_.Get(); }
+
+    void set_color(ID2D1SolidColorBrush* brush, const Color& color, float opacity = 1.0f) const noexcept {
+        if (!brush) return;
+        brush->SetColor(D2D1::ColorF(color.r, color.g, color.b, color.a));
+        brush->SetOpacity(std::clamp(opacity, 0.0f, 1.0f));
+    }
+
+    void fill_rect(const D2D1_RECT_F& rect, ID2D1Brush* brush) const noexcept {
+        if (d2d_context_ && brush) d2d_context_->FillRectangle(rect, brush);
+    }
+
+    void stroke_rect(const D2D1_RECT_F& rect, ID2D1Brush* brush, float width = 1.0f) const noexcept {
+        if (d2d_context_ && brush) d2d_context_->DrawRectangle(rect, brush, width);
+    }
+
+    void rounded_rect(const D2D1_RECT_F& rect, float radius, ID2D1Brush* fill,
+                      ID2D1Brush* stroke = nullptr, float width = 1.0f) const noexcept {
+        if (!d2d_context_) return;
+        const auto rounded = D2D1::RoundedRect(rect, radius, radius);
+        if (fill) d2d_context_->FillRoundedRectangle(rounded, fill);
+        if (stroke) d2d_context_->DrawRoundedRectangle(rounded, stroke, width);
+    }
+
+    void line(D2D1_POINT_2F a, D2D1_POINT_2F b, ID2D1Brush* brush,
+              float width = 1.0f) const noexcept {
+        if (d2d_context_ && brush) d2d_context_->DrawLine(a, b, brush, width);
+    }
+
+    void circle(D2D1_POINT_2F center, float radius, ID2D1Brush* fill,
+                ID2D1Brush* stroke = nullptr, float width = 1.0f) const noexcept {
+        if (!d2d_context_) return;
+        const auto ellipse = D2D1::Ellipse(center, radius, radius);
+        if (fill) d2d_context_->FillEllipse(ellipse, fill);
+        if (stroke) d2d_context_->DrawEllipse(ellipse, stroke, width);
+    }
+
+    Microsoft::WRL::ComPtr<IDWriteTextFormat> make_text_format(
+        float size, DWRITE_FONT_WEIGHT weight = DWRITE_FONT_WEIGHT_NORMAL,
+        DWRITE_TEXT_ALIGNMENT alignment = DWRITE_TEXT_ALIGNMENT_LEADING) const {
+        Microsoft::WRL::ComPtr<IDWriteTextFormat> format;
+        if (!write_factory_) return format;
+        if (FAILED(write_factory_->CreateTextFormat(
+                L"Segoe UI Variable", nullptr, weight, DWRITE_FONT_STYLE_NORMAL,
+                DWRITE_FONT_STRETCH_NORMAL, size, L"en-us", format.GetAddressOf()))) {
+            write_factory_->CreateTextFormat(
+                L"Segoe UI", nullptr, weight, DWRITE_FONT_STYLE_NORMAL,
+                DWRITE_FONT_STRETCH_NORMAL, size, L"en-us", format.GetAddressOf());
+        }
+        if (format) {
+            format->SetTextAlignment(alignment);
+            format->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+            format->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
+        }
+        return format;
+    }
+
+    void text(std::wstring_view value, const D2D1_RECT_F& bounds, IDWriteTextFormat* format,
+              ID2D1Brush* brush, D2D1_DRAW_TEXT_OPTIONS options = D2D1_DRAW_TEXT_OPTIONS_CLIP) const noexcept {
+        if (!d2d_context_ || !format || !brush || value.empty()) return;
+        d2d_context_->DrawTextW(value.data(), static_cast<UINT32>(value.size()), format,
+                                bounds, brush, options, DWRITE_MEASURING_MODE_NATURAL);
+    }
+
+    IDWriteTextFormat* title_format() const noexcept { return title_format_.Get(); }
+    IDWriteTextFormat* heading_format() const noexcept { return heading_format_.Get(); }
+    IDWriteTextFormat* label_format() const noexcept { return label_format_.Get(); }
+    IDWriteTextFormat* small_format() const noexcept { return small_format_.Get(); }
+    IDWriteTextFormat* mono_format() const noexcept { return mono_format_.Get(); }
+
+    RectD canvas_bounds(double resize_change = 0.0) const noexcept {
+        const D2D1_SIZE_F size = logical_size();
+        (void)resize_change;
+        constexpr double left = 184.0;
+        constexpr double right = 304.0;
+        constexpr double top = 70.0;
+        constexpr double bottom = 76.0;
+        return {left + 14.0, top + 12.0,
+                (std::max)(1.0, static_cast<double>(size.width) - left - right - 28.0),
+                (std::max)(1.0, static_cast<double>(size.height) - top - bottom - 24.0)};
+    }
+
+    std::optional<std::size_t> workspace_at(Vec2 point, double resize_change = 0.0) const noexcept {
+        const double left_width = canvas_bounds(resize_change).x - 14.0;
+        if (point.x < 12.0 || point.x > left_width - 10.0 || point.y < 94.0) return std::nullopt;
+        for (std::size_t index = 0; index < workspace_names().size(); ++index) {
+            const RectD item{14.0, 98.0 + static_cast<double>(index) * 47.0,
+                             left_width - 30.0, 38.0};
+            if (item.contains(point)) return index;
+        }
+        return std::nullopt;
+    }
+
+    void draw_shell(const AuthoredWorld& world, std::span<const std::size_t> selection,
+                    std::size_t workspace_index, std::wstring_view workspace,
+                    std::wstring_view status, const LightRuntime&,
+                    const SpatialSystemAssociation& system, double resize_change,
+                    double timeline_position) {
+        if (!d2d_context_) return;
+        const D2D1_SIZE_F size = logical_size();
+        const RectD canvas = canvas_bounds(resize_change);
+        const float left = static_cast<float>(canvas.x - 14.0);
+        const float right = static_cast<float>(canvas.right() + 14.0);
+        const float bottom = static_cast<float>(canvas.bottom() + 12.0);
+
+        set_color(panel_brush_.Get(), {0.045f, 0.060f, 0.120f, 1.0f}, 0.98f);
+        set_color(surface_brush_.Get(), {0.075f, 0.100f, 0.190f, 1.0f}, 0.98f);
+        set_color(text_brush_.Get(), {0.96f, 0.97f, 1.0f, 1.0f}, 1.0f);
+        set_color(text_muted_brush_.Get(), {0.58f, 0.65f, 0.82f, 1.0f}, 1.0f);
+        set_color(warm_brush_.Get(), {1.0f, 0.82f, 0.40f, 1.0f}, 1.0f);
+        set_color(accent_brush_.Get(), {0.29f, 0.91f, 0.83f, 1.0f}, 1.0f);
+
+        fill_rect(D2D1::RectF(0.0f, 0.0f, size.width, 70.0f), panel_brush_.Get());
+        fill_rect(D2D1::RectF(0.0f, 70.0f, left, size.height), panel_brush_.Get());
+        fill_rect(D2D1::RectF(right, 70.0f, size.width, size.height), panel_brush_.Get());
+        fill_rect(D2D1::RectF(left, bottom, right, size.height), panel_brush_.Get());
+        const float change_emphasis = static_cast<float>(std::clamp(std::abs(resize_change) / 480.0, 0.0, 1.0));
+        line({0.0f, 69.5f}, {size.width, 69.5f}, warm_brush_.Get(), 1.0f + change_emphasis);
+
+        text(L"MY LIGHT", D2D1::RectF(20.0f, 12.0f, left - 10.0f, 56.0f),
+             title_format_.Get(), warm_brush_.Get());
+        text(workspace, D2D1::RectF(left + 18.0f, 13.0f, right - 18.0f, 55.0f),
+             heading_format_.Get(), text_brush_.Get());
+        text(L"PRIVATE  ·  OFFLINE  ·  NATIVE", D2D1::RectF(right, 18.0f, size.width - 18.0f, 52.0f),
+             small_format_.Get(), accent_brush_.Get());
+
+        text(L"ONE WORLD · SIX ENCOUNTERS", D2D1::RectF(14.0f, 72.0f, left - 10.0f, 96.0f),
+             small_format_.Get(), text_muted_brush_.Get());
+        const auto names = workspace_names();
+        for (std::size_t index = 0; index < names.size(); ++index) {
+            const auto bounds = D2D1::RectF(14.0f, 98.0f + static_cast<float>(index) * 47.0f,
+                                            left - 16.0f, 136.0f + static_cast<float>(index) * 47.0f);
+            if (index == workspace_index) {
+                set_color(surface_brush_.Get(), {0.13f, 0.18f, 0.33f, 1.0f}, 1.0f);
+                rounded_rect(bounds, 9.0f, surface_brush_.Get(), accent_brush_.Get(), 1.2f);
+            }
+            text(names[index], bounds, label_format_.Get(),
+                 index == workspace_index ? text_brush_.Get() : text_muted_brush_.Get());
+        }
+
+        const float inspector_x = right + 18.0f;
+        text(L"ATTENTION / OPERAND", D2D1::RectF(inspector_x, 82.0f, size.width - 14.0f, 108.0f),
+             label_format_.Get(), warm_brush_.Get());
+        float inspector_y = 112.0f;
+        if (!selection.empty()) {
+            if (const WorldNode* selected = world.find(selection.front());
+                selected && selected->catalog_index < light_catalog.size()) {
+                const LightDefinition& definition = light_catalog[selected->catalog_index];
+                text(utf8_to_wide(definition.unit),
+                     D2D1::RectF(inspector_x, inspector_y, size.width - 14.0f, inspector_y + 26.0f),
+                     heading_format_.Get(), text_brush_.Get());
+                inspector_y += 28.0f;
+                text(utf8_to_wide(std::string(definition.code) + " · " + std::string(definition.origin)),
+                     D2D1::RectF(inspector_x, inspector_y, size.width - 14.0f, inspector_y + 24.0f),
+                     small_format_.Get(), accent_brush_.Get());
+                inspector_y += 24.0f;
+                text(utf8_to_wide(definition.signature),
+                     D2D1::RectF(inspector_x, inspector_y, size.width - 14.0f, inspector_y + 22.0f),
+                     mono_format_.Get(), text_muted_brush_.Get());
+            }
+        } else {
+            text(L"MY LIGHT / whole authored field",
+                 D2D1::RectF(inspector_x, inspector_y, size.width - 14.0f, inspector_y + 26.0f),
+                 label_format_.Get(), text_brush_.Get());
+            inspector_y += 32.0f;
+        }
+
+        inspector_y = (std::max)(inspector_y + 20.0f, 214.0f);
+        text(L"LIVE MATHEMATICAL ROUTES", D2D1::RectF(inspector_x, inspector_y,
+             size.width - 14.0f, inspector_y + 24.0f), label_format_.Get(), warm_brush_.Get());
+        inspector_y += 28.0f;
+        inspector_y = draw_route(portrayal_.cardinality_route, inspector_x, inspector_y,
+                                 size.width - inspector_x - 14.0f);
+        inspector_y = draw_route(portrayal_.fairness_route, inspector_x, inspector_y,
+                                 size.width - inspector_x - 14.0f);
+        inspector_y = draw_route(portrayal_.dependency_route, inspector_x, inspector_y,
+                                 size.width - inspector_x - 14.0f);
+
+        text(system.synthetic ? L"SYSTEM RELATION · SYNTHETIC · LIVE GRANT DORMANT"
+                              : L"SYSTEM RELATION · EXACT GRANT",
+             D2D1::RectF(inspector_x, size.height - 54.0f, size.width - 14.0f, size.height - 26.0f),
+             small_format_.Get(), system.synthetic ? text_muted_brush_.Get() : accent_brush_.Get());
+
+        const float track_left = left + 22.0f;
+        const float track_right = right - 22.0f;
+        const float track_y = bottom + 26.0f;
+        line({track_left, track_y}, {track_right, track_y}, surface_brush_.Get(), 3.0f);
+        const float play_x = track_left + static_cast<float>(std::clamp(timeline_position, 0.0, 1.0)) *
+                                       (track_right - track_left);
+        line({track_left, track_y}, {play_x, track_y}, accent_brush_.Get(), 3.0f);
+        circle({play_x, track_y}, 5.0f, warm_brush_.Get());
+        text(status, D2D1::RectF(track_left, bottom + 38.0f, track_right, size.height - 5.0f),
+             small_format_.Get(), text_muted_brush_.Get());
+    }
+
+    void draw_system_relation(const RectD& viewport, const SpatialSystemAssociation& association) {
+        if (!d2d_context_) return;
+        const Vec2 center = viewport.center();
+        set_color(surface_brush_.Get(), {0.055f, 0.075f, 0.15f, 1.0f}, 0.94f);
+        rounded_rect(to_rect(viewport), 18.0f, surface_brush_.Get());
+
+        set_color(warm_brush_.Get(), {1.0f, 0.82f, 0.38f, 1.0f}, 1.0f);
+        set_color(accent_brush_.Get(), {0.30f, 0.91f, 0.83f, 1.0f}, 0.88f);
+        circle(to_point(center), 34.0f, warm_brush_.Get(), accent_brush_.Get(), 2.0f);
+        text(association.bit.value ? L"BIT 1" : L"BIT 0",
+             D2D1::RectF(static_cast<float>(center.x - 38.0), static_cast<float>(center.y - 13.0),
+                         static_cast<float>(center.x + 38.0), static_cast<float>(center.y + 13.0)),
+             heading_format_.Get(), panel_brush_.Get());
+
+        const std::size_t operand_count = association.operands.size();
+        for (std::size_t index = 0; index < operand_count; ++index) {
+            const double angle = -pi * 0.82 + (operand_count > 1 ?
+                pi * 1.64 * static_cast<double>(index) / static_cast<double>(operand_count - 1) : 0.0);
+            const Vec2 position = center + Vec2{std::cos(angle) * viewport.width * 0.34,
+                                                std::sin(angle) * viewport.height * 0.32};
+            line(to_point(center), to_point(position), accent_brush_.Get(), 1.2f);
+            set_color(surface_brush_.Get(), branch_color(association.operands[index].light_unit), 0.92f);
+            circle(to_point(position), 23.0f, surface_brush_.Get(), accent_brush_.Get(), 1.0f);
+            text(utf8_to_wide(association.operands[index].light_unit),
+                 D2D1::RectF(static_cast<float>(position.x - 66.0), static_cast<float>(position.y - 9.0),
+                             static_cast<float>(position.x + 66.0), static_cast<float>(position.y + 9.0)),
+                 small_format_.Get(), text_brush_.Get());
+        }
+
+        float bar_y = static_cast<float>(viewport.bottom() - 92.0);
+        const float bar_left = static_cast<float>(viewport.x + 30.0);
+        const float bar_width = static_cast<float>((std::min)(viewport.width * 0.29, 230.0));
+        for (const HardwareLevel& level : association.levels) {
+            text(utf8_to_wide(system_part_name(level.part)),
+                 D2D1::RectF(bar_left, bar_y, bar_left + 80.0f, bar_y + 16.0f),
+                 small_format_.Get(), text_muted_brush_.Get());
+            rounded_rect(D2D1::RectF(bar_left + 84.0f, bar_y + 4.0f, bar_left + 84.0f + bar_width,
+                                     bar_y + 12.0f), 4.0f, panel_brush_.Get());
+            rounded_rect(D2D1::RectF(bar_left + 84.0f, bar_y + 4.0f,
+                                     bar_left + 84.0f + bar_width * static_cast<float>(std::clamp(level.normalized, 0.0, 1.0)),
+                                     bar_y + 12.0f), 4.0f, accent_brush_.Get());
+            bar_y += 20.0f;
+        }
+        text(L"ONE SPATIAL ASSOCIATION · NO AMBIENT HARDWARE READING",
+             D2D1::RectF(static_cast<float>(viewport.x + 18.0), static_cast<float>(viewport.y + 12.0),
+                         static_cast<float>(viewport.right() - 18.0), static_cast<float>(viewport.y + 42.0)),
+             label_format_.Get(), warm_brush_.Get());
+    }
+
+    std::optional<std::size_t> operation_at(Vec2 point, const RectD& viewport) const noexcept {
+        return operation_catalog_at(point, viewport);
+    }
+
+    void draw_operations(const RectD& viewport, const OperationDraft& draft,
+                         std::size_t retained_receipts,
+                         std::uint64_t discarded_receipts) {
+        if (!d2d_context_ || draft.catalog_index >= light_catalog.size()) return;
+        set_color(surface_brush_.Get(), {0.055f, 0.075f, 0.15f, 1.0f}, 0.96f);
+        rounded_rect(to_rect(viewport), 18.0f, surface_brush_.Get());
+
+        const std::size_t selected_catalog = draft.catalog_index;
+        const LightDefinition& selected_definition = light_catalog[selected_catalog];
+        const RectD root{viewport.x + viewport.width * 0.30, viewport.y + 8.0,
+                         viewport.width * 0.40, 38.0};
+        set_color(panel_brush_.Get(), branch_color("MY LIGHT"), 0.82f);
+        set_color(accent_brush_.Get(), {0.30f, 0.91f, 0.83f, 1.0f},
+                  selected_catalog == 0 ? 1.0f : 0.35f);
+        rounded_rect(to_rect(root), 9.0f, panel_brush_.Get(), accent_brush_.Get(),
+                     selected_catalog == 0 ? 2.0f : 1.0f);
+        text(L"MY LIGHT | divinand | authored whole-system operand",
+             to_rect(root), small_format_.Get(), text_brush_.Get());
+
+        const RectD grid = operations_grid_bounds(viewport);
+        const double cell_width = grid.width / 10.0;
+        const double cell_height = grid.height / 11.0;
+        for (std::size_t column = 0; column < 10; ++column) {
+            for (std::size_t row = 0; row < 11; ++row) {
+                const std::size_t catalog_index = 1 + column * 11 + row;
+                if (catalog_index >= light_catalog.size()) continue;
+                const LightDefinition& definition = light_catalog[catalog_index];
+                const RectD cell{grid.x + column * cell_width + 2.0,
+                                 grid.y + row * cell_height + 2.0,
+                                 (std::max)(8.0, cell_width - 4.0),
+                                 (std::max)(8.0, cell_height - 4.0)};
+                const bool selected = catalog_index == selected_catalog;
+                set_color(panel_brush_.Get(), branch_color(definition.branch), row == 0 ? 0.60f : 0.26f);
+                set_color(accent_brush_.Get(), {0.30f, 0.91f, 0.83f, 1.0f}, selected ? 1.0f : 0.20f);
+                rounded_rect(to_rect(cell), 5.0f, panel_brush_.Get(),
+                             selected || row == 0 ? accent_brush_.Get() : nullptr,
+                             selected ? 1.8f : 0.7f);
+                text(utf8_to_wide(definition.unit), to_rect(cell), small_format_.Get(), text_brush_.Get());
+            }
+        }
+
+        const RectD workbench = operations_workbench_bounds(viewport);
+        set_color(panel_brush_.Get(), {0.075f, 0.105f, 0.205f, 1.0f}, 0.98f);
+        rounded_rect(to_rect(workbench), 12.0f, panel_brush_.Get(), accent_brush_.Get(), 1.0f);
+        const float left = static_cast<float>(workbench.x + 12.0);
+        const float right = static_cast<float>(workbench.right() - 12.0);
+
+        text(utf8_to_wide(std::string(selected_definition.unit) + " | " +
+                          std::string(selected_definition.code)),
+             D2D1::RectF(left, static_cast<float>(workbench.y + 7.0), right,
+                         static_cast<float>(workbench.y + 27.0)),
+             mono_format_.Get(), accent_brush_.Get());
+        text(utf8_to_wide(std::string(selected_definition.signature) + " | origin: " +
+                          std::string(selected_definition.origin)),
+             D2D1::RectF(left, static_cast<float>(workbench.y + 27.0), right,
+                         static_cast<float>(workbench.y + 45.0)),
+             small_format_.Get(), text_muted_brush_.Get());
+
+        if (draft.sockets.empty()) {
+            text(L"No operand sockets: invoke the authored nullary body directly.",
+                 D2D1::RectF(left, static_cast<float>(workbench.y + 49.0), right,
+                             static_cast<float>(workbench.y + 69.0)),
+                 small_format_.Get(), text_muted_brush_.Get());
+        } else {
+            for (std::size_t socket = 0; socket < draft.sockets.size(); ++socket) {
+                const RectD socket_row = operation_socket_bounds(viewport, socket);
+                const bool active = socket == draft.active_socket;
+                set_color(panel_brush_.Get(), active ? Color{0.12f, 0.30f, 0.34f, 1.0f}
+                                                      : Color{0.07f, 0.09f, 0.17f, 1.0f},
+                          active ? 0.98f : 0.74f);
+                rounded_rect(to_rect(socket_row), 4.0f, panel_brush_.Get(),
+                             active ? accent_brush_.Get() : nullptr, active ? 1.4f : 0.0f);
+                const OperandDesignation& designation = draft.sockets[socket];
+                const std::wstring socket_text = (active ? L"> " : L"  ") +
+                    std::to_wstring(socket + 1) + L"  " + utf8_to_wide(designation.role) +
+                    L" = " + operand_summary(designation.value);
+                text(socket_text,
+                     D2D1::RectF(static_cast<float>(socket_row.x + 5.0), static_cast<float>(socket_row.y),
+                                 static_cast<float>(socket_row.right() - 5.0),
+                                 static_cast<float>(socket_row.bottom())),
+                     small_format_.Get(), active ? text_brush_.Get() : text_muted_brush_.Get());
+            }
+        }
+
+        const double result_y = workbench.y + 52.0 +
+            22.0 * static_cast<double>((std::max)(std::size_t{1}, draft.sockets.size()));
+        std::wstring result_text;
+        if (draft.last_result) {
+            result_text = L"LAST EXACT RESULT: " + operand_summary(*draft.last_result);
+            if (draft.invoked) result_text += L" | expression " + std::to_wstring(draft.last_expression.value);
+        } else if (draft.invoked) {
+            result_text = L"LATEST EXECUTION: route retained; no exact result value";
+        } else {
+            result_text = L"RESULT: ready for authored execution";
+        }
+        text(result_text,
+             D2D1::RectF(left, static_cast<float>(result_y), right,
+                         static_cast<float>(result_y + 18.0)),
+             small_format_.Get(), warm_brush_.Get());
+
+        const std::wstring error_text = draft.last_error.empty()
+            ? L"DOMAIN: typed sockets remain separate from the Light unit identity"
+            : L"LATEST ERROR: " + utf8_to_wide(draft.last_error);
+        text(error_text,
+             D2D1::RectF(left, static_cast<float>(result_y + 18.0), right,
+                         static_cast<float>(result_y + 36.0)),
+             small_format_.Get(), draft.last_error.empty() ? text_muted_brush_.Get() : warm_brush_.Get());
+
+        const std::wstring receipts = L"RECEIPTS: " + std::to_wstring(retained_receipts) + L" / " +
+            std::to_wstring(Editor::maximum_retained_receipts) + L" retained | " +
+            std::to_wstring(discarded_receipts) + L" discarded with explicit accounting";
+        text(receipts,
+             D2D1::RectF(left, static_cast<float>(workbench.bottom() - 40.0), right,
+                         static_cast<float>(workbench.bottom() - 22.0)),
+             small_format_.Get(), discarded_receipts == 0 ? text_muted_brush_.Get() : warm_brush_.Get());
+        text(L"Tab / Shift+Tab socket | +/- bounded typed edit | V compatible result | R reset | Enter / Space execute",
+             D2D1::RectF(left, static_cast<float>(workbench.bottom() - 22.0), right,
+                         static_cast<float>(workbench.bottom() - 4.0)),
+             small_format_.Get(), text_brush_.Get());
+    }
+
+    void draw_time_media(const RectD& viewport, const LightRuntime& light, double phase) {
+        if (!d2d_context_) return;
+        set_color(surface_brush_.Get(), {0.055f, 0.075f, 0.15f, 1.0f}, 0.96f);
+        rounded_rect(to_rect(viewport), 18.0f, surface_brush_.Get());
+        text(L"TIME / MEDIA · AUTHORED CAUSE STAYS · PORTRAYAL REMAINS DISPOSABLE",
+             D2D1::RectF(static_cast<float>(viewport.x + 18.0), static_cast<float>(viewport.y + 10.0),
+                         static_cast<float>(viewport.right() - 18.0), static_cast<float>(viewport.y + 42.0)),
+             label_format_.Get(), warm_brush_.Get());
+
+        const float left = static_cast<float>(viewport.x + 36.0);
+        const float right = static_cast<float>(viewport.right() - 28.0);
+        float y = static_cast<float>(viewport.y + 78.0);
+        const std::array<std::wstring_view, 5> tracks{L"PRESENTLY / eval_at", L"CHANGELY / forward_diff",
+                                                     L"MEMORY / delay_k", L"TIMELY / maxplus_mv",
+                                                     L"TRACKA / dtw_path"};
+        for (std::size_t track = 0; track < tracks.size(); ++track) {
+            text(tracks[track], D2D1::RectF(left, y - 18.0f, left + 180.0f, y + 4.0f),
+                 small_format_.Get(), text_muted_brush_.Get());
+            line({left + 184.0f, y}, {right, y}, panel_brush_.Get(), 4.0f);
+            for (std::size_t key = 0; key < 8; ++key) {
+                const float x = left + 194.0f + static_cast<float>(key) / 7.0f * (right - left - 204.0f);
+                const float wave = std::sin(static_cast<float>(key) * 1.3f + static_cast<float>(track));
+                circle({x, y + wave * 8.0f}, key % 3 == track % 3 ? 5.0f : 3.0f,
+                       key % 3 == track % 3 ? warm_brush_.Get() : accent_brush_.Get());
+            }
+            y += 62.0f;
+        }
+        const float play_x = left + 184.0f + static_cast<float>(std::clamp(phase, 0.0, 1.0)) *
+                                             (right - left - 184.0f);
+        line({play_x, static_cast<float>(viewport.y + 54.0)},
+             {play_x, static_cast<float>(viewport.bottom() - 26.0)}, warm_brush_.Get(), 1.6f);
+        text(L"Finite routes: " + std::to_wstring(light.expressions().size()) +
+                 L" · local image/audio/video openings remain purpose-invoked",
+             D2D1::RectF(left, static_cast<float>(viewport.bottom() - 42.0), right,
+                         static_cast<float>(viewport.bottom() - 12.0)),
+             small_format_.Get(), text_muted_brush_.Get());
+    }
+
+    void draw_planar_world(const AuthoredWorld& world, const PlanarFrame& frame,
+                           const PortrayalPlan& plan) {
+        if (!d2d_context_ || frame.viewport.width <= 1.0 || frame.viewport.height <= 1.0) return;
+        const D2D1_RECT_F viewport = to_rect(frame.viewport);
+        d2d_context_->PushAxisAlignedClip(viewport, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+
+        // The grid is disposable technical geometry.  Its spacing is supplied
+        // by the planar camera's purpose-sized portrayal, not stored as work.
+        set_color(surface_brush_.Get(), {0.18f, 0.25f, 0.42f, 1.0f}, 0.20f * plan.detail);
+        const float spacing = static_cast<float>((std::max)(frame.grid_spacing, 12.0));
+        for (float x = static_cast<float>(frame.viewport.x); x < static_cast<float>(frame.viewport.right()); x += spacing) {
+            line({x, static_cast<float>(frame.viewport.y)},
+                 {x, static_cast<float>(frame.viewport.bottom())}, surface_brush_.Get(), 0.55f);
+        }
+        for (float y = static_cast<float>(frame.viewport.y); y < static_cast<float>(frame.viewport.bottom()); y += spacing) {
+            line({static_cast<float>(frame.viewport.x), y},
+                 {static_cast<float>(frame.viewport.right()), y}, surface_brush_.Get(), 0.55f);
+        }
+
+        // FRACTALLY's finite Hutchinson result arrives as strokes from the 2D
+        // language.  D2D merely manifests that already-bounded mathematics.
+        set_color(accent_brush_.Get(), {0.28f, 0.90f, 0.82f, 1.0f}, 0.22f * plan.glow);
+        for (const FractalStroke2D& stroke : frame.generated_strokes) {
+            line(to_point(stroke.start), to_point(stroke.end), accent_brush_.Get(), 0.8f);
+        }
+
+        set_color(surface_brush_.Get(), {0.32f, 0.47f, 0.82f, 1.0f}, 0.28f);
+        for (const PlanarRelation& relation : frame.relations) {
+            line(to_point(relation.start), to_point(relation.end), surface_brush_.Get(),
+                 relation.strength > 1.0 ? 1.5f : 0.9f);
+        }
+
+        const std::size_t extent = (std::min)(frame.nodes.size(), plan.visible_limit);
+        for (std::size_t index = 0; index < extent; ++index) {
+            const PlanarNode& portrayal = frame.nodes[index];
+            const WorldNode* node = world.find(portrayal.id);
+            if (!node || node->catalog_index >= light_catalog.size()) continue;
+            const LightDefinition& definition = light_catalog[node->catalog_index];
+            const Color color = branch_color(definition.branch);
+            const D2D1_POINT_2F center = to_point(portrayal.center);
+            const float radius = static_cast<float>((std::max)(portrayal.radius, 2.0));
+
+            if (portrayal.selected) {
+                set_color(accent_brush_.Get(), {0.38f, 0.96f, 0.88f, 1.0f}, 0.17f * plan.glow);
+                circle(center, radius + 11.0f, accent_brush_.Get());
+                set_color(accent_brush_.Get(), {0.42f, 1.0f, 0.91f, 1.0f}, 0.92f);
+                circle(center, radius + 5.0f, nullptr, accent_brush_.Get(), 2.0f);
+            }
+
+            set_color(surface_brush_.Get(), color, portrayal.central ? 0.97f : 0.80f);
+            set_color(warm_brush_.Get(), portrayal.central ? Color{1.0f, 0.83f, 0.42f, 1.0f}
+                                                            : Color{0.78f, 0.86f, 1.0f, 1.0f},
+                      portrayal.main_class ? 0.92f : 0.50f);
+            circle(center, radius, surface_brush_.Get(), warm_brush_.Get(),
+                   portrayal.central ? 2.4f : 1.15f);
+
+            if (portrayal.detail != PlanarDetail::Presence) {
+                const std::wstring unit = utf8_to_wide(definition.unit);
+                const float width = portrayal.main_class || portrayal.central ? 150.0f : 112.0f;
+                const auto bounds = D2D1::RectF(center.x - width * 0.5f, center.y - 9.0f,
+                                                center.x + width * 0.5f, center.y + 9.0f);
+                text(unit, bounds, portrayal.central ? heading_format_.Get() : small_format_.Get(),
+                     text_brush_.Get());
+            }
+            if (portrayal.detail == PlanarDetail::Function && radius >= 18.0f) {
+                const std::wstring function = utf8_to_wide(definition.code);
+                const auto bounds = D2D1::RectF(center.x - 92.0f, center.y + 8.0f,
+                                                center.x + 92.0f, center.y + 24.0f);
+                set_color(text_muted_brush_.Get(), {0.72f, 0.79f, 0.96f, 1.0f}, 0.88f);
+                text(function, bounds, mono_format_.Get(), text_muted_brush_.Get());
+            }
+        }
+
+        if (frame.spatial_portal.active) {
+            const D2D1_RECT_F portal = to_rect(frame.spatial_portal.screen_bounds);
+            set_color(panel_brush_.Get(), {0.07f, 0.10f, 0.20f, 1.0f}, 0.88f);
+            set_color(accent_brush_.Get(), {0.32f, 0.88f, 1.0f, 1.0f}, 0.72f);
+            rounded_rect(portal, 14.0f, panel_brush_.Get(), accent_brush_.Get(), 1.4f);
+            text(L"3D INSIDE 2D  ·  SAME AUTHORED WORLD", portal, small_format_.Get(),
+                 text_muted_brush_.Get());
+        }
+
+        d2d_context_->PopAxisAlignedClip();
+    }
+
+    void draw_spatial_world(const AuthoredWorld& world, const SpatialFrame& frame,
+                            const PortrayalPlan& plan) {
+        if (!d2d_context_ || frame.viewport.width <= 1.0 || frame.viewport.height <= 1.0) return;
+        d2d_context_->PushAxisAlignedClip(to_rect(frame.viewport), D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+
+        // Technical horizon and axes portray the authored camera basis.  GIVENS
+        // rotation and SPIRALLY geometry have already acted in Fractalizer3D.
+        const Vec2 middle = frame.viewport.center();
+        set_color(surface_brush_.Get(), {0.16f, 0.24f, 0.44f, 1.0f}, 0.32f);
+        for (int ring = 1; ring <= 7; ++ring) {
+            const float radius = static_cast<float>(ring * 58);
+            d2d_context_->DrawEllipse(D2D1::Ellipse(to_point(middle), radius, radius * 0.34f),
+                                      surface_brush_.Get(), 0.7f);
+        }
+        line({static_cast<float>(frame.viewport.x), static_cast<float>(middle.y)},
+             {static_cast<float>(frame.viewport.right()), static_cast<float>(middle.y)},
+             surface_brush_.Get(), 0.8f);
+        line({static_cast<float>(middle.x), static_cast<float>(frame.viewport.y)},
+             {static_cast<float>(middle.x), static_cast<float>(frame.viewport.bottom())},
+             surface_brush_.Get(), 0.8f);
+
+        for (const SpatialStroke3D& stroke : frame.generated_strokes) {
+            const float depth_alpha = static_cast<float>(1.0 / (1.0 + (std::max)(stroke.depth, 0.0) * 0.0015));
+            set_color(accent_brush_.Get(), {0.30f, 0.88f, 0.98f, 1.0f},
+                      static_cast<float>(stroke.alpha) * depth_alpha * plan.glow);
+            line(to_point(stroke.start), to_point(stroke.end), accent_brush_.Get(), 0.8f);
+        }
+        for (const SpatialRelation& relation : frame.relations) {
+            const float depth_alpha = static_cast<float>(1.0 / (1.0 + (std::max)(relation.near_depth, 0.0) * 0.0014));
+            set_color(surface_brush_.Get(), {0.40f, 0.56f, 0.95f, 1.0f}, 0.22f + 0.42f * depth_alpha);
+            line(to_point(relation.start), to_point(relation.end), surface_brush_.Get(), 0.8f + depth_alpha);
+        }
+
+        const std::size_t extent = (std::min)(frame.nodes.size(), plan.visible_limit);
+        for (std::size_t index = 0; index < extent; ++index) {
+            const SpatialNode& portrayal = frame.nodes[index];
+            const WorldNode* node = world.find(portrayal.id);
+            if (!node || portrayal.catalog_index >= light_catalog.size()) continue;
+            const LightDefinition& definition = light_catalog[portrayal.catalog_index];
+            const float depth_alpha = static_cast<float>(1.0 / (1.0 + (std::max)(portrayal.depth, 0.0) * 0.001));
+            const float radius = static_cast<float>((std::max)(portrayal.radius, 2.5));
+            const D2D1_POINT_2F center = to_point(portrayal.screen);
+            const Color color = branch_color(definition.branch);
+            if (portrayal.selected) {
+                set_color(accent_brush_.Get(), {0.40f, 1.0f, 0.90f, 1.0f}, 0.18f * plan.glow);
+                circle(center, radius + 10.0f, accent_brush_.Get());
+                set_color(accent_brush_.Get(), {0.40f, 1.0f, 0.90f, 1.0f}, 0.95f);
+                circle(center, radius + 4.0f, nullptr, accent_brush_.Get(), 1.8f);
+            }
+            set_color(surface_brush_.Get(), color, 0.48f + 0.48f * depth_alpha);
+            set_color(warm_brush_.Get(), portrayal.central ? Color{1.0f, 0.84f, 0.42f, 1.0f}
+                                                            : Color{0.65f, 0.78f, 1.0f, 1.0f},
+                      0.48f + 0.46f * depth_alpha);
+            circle(center, radius, surface_brush_.Get(), warm_brush_.Get(), portrayal.central ? 2.2f : 1.0f);
+            if ((portrayal.main_class || portrayal.central || portrayal.selected) && radius >= 8.0f) {
+                const auto bounds = D2D1::RectF(center.x - 78.0f, center.y - 9.0f,
+                                                center.x + 78.0f, center.y + 9.0f);
+                text(utf8_to_wide(definition.unit), bounds,
+                     portrayal.central ? heading_format_.Get() : small_format_.Get(), text_brush_.Get());
+            }
+        }
+
+        if (frame.planar_portal.active) {
+            set_color(panel_brush_.Get(), {0.06f, 0.09f, 0.18f, 1.0f}, 0.76f);
+            set_color(accent_brush_.Get(), {0.38f, 0.93f, 0.84f, 1.0f}, 0.82f);
+            const auto& corners = frame.planar_portal.screen_corners;
+            for (std::size_t edge = 0; edge < corners.size(); ++edge) {
+                line(to_point(corners[edge]), to_point(corners[(edge + 1) % corners.size()]),
+                     accent_brush_.Get(), 1.5f);
+            }
+            const Vec2 label_center{(corners[0].x + corners[2].x) * 0.5,
+                                    (corners[0].y + corners[2].y) * 0.5};
+            text(L"2D INSIDE 3D · SAME WORK",
+                 D2D1::RectF(static_cast<float>(label_center.x - 100.0), static_cast<float>(label_center.y - 12.0),
+                             static_cast<float>(label_center.x + 100.0), static_cast<float>(label_center.y + 12.0)),
+                 small_format_.Get(), accent_brush_.Get());
+        }
+
+        d2d_context_->PopAxisAlignedClip();
+    }
+
+    bool test_visible() {
+        if (!swap_chain_ || !occluded_) return true;
+        const HRESULT result = swap_chain_->Present(0, DXGI_PRESENT_TEST);
+        if (result == S_OK) occluded_ = false;
+        if (is_device_loss(result)) return recreate_device();
+        return result == S_OK;
+    }
+
+private:
+    static bool is_device_loss(HRESULT result) noexcept {
+        return result == DXGI_ERROR_DEVICE_REMOVED || result == DXGI_ERROR_DEVICE_RESET ||
+               result == DXGI_ERROR_DRIVER_INTERNAL_ERROR;
+    }
+
+    bool create_independent_resources() {
+        D2D1_FACTORY_OPTIONS options{};
+#if defined(_DEBUG)
+        options.debugLevel = D2D1_DEBUG_LEVEL_INFORMATION;
+#endif
+        HRESULT result = D2D1CreateFactory(
+            D2D1_FACTORY_TYPE_SINGLE_THREADED, __uuidof(ID2D1Factory1), &options,
+            reinterpret_cast<void**>(d2d_factory_.GetAddressOf()));
+        if (FAILED(result)) return false;
+
+        result = DWriteCreateFactory(
+            DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory),
+            reinterpret_cast<IUnknown**>(write_factory_.GetAddressOf()));
+        if (FAILED(result)) return false;
+        title_format_ = make_text_format(25.0f, DWRITE_FONT_WEIGHT_SEMI_BOLD);
+        heading_format_ = make_text_format(15.0f, DWRITE_FONT_WEIGHT_SEMI_BOLD,
+                                           DWRITE_TEXT_ALIGNMENT_CENTER);
+        label_format_ = make_text_format(13.0f, DWRITE_FONT_WEIGHT_MEDIUM);
+        small_format_ = make_text_format(10.5f, DWRITE_FONT_WEIGHT_MEDIUM,
+                                         DWRITE_TEXT_ALIGNMENT_CENTER);
+        mono_format_ = make_text_format(9.5f, DWRITE_FONT_WEIGHT_NORMAL,
+                                        DWRITE_TEXT_ALIGNMENT_CENTER);
+        return title_format_ && heading_format_ && label_format_ && small_format_ && mono_format_;
+    }
+
+    bool create_device_resources() {
+        UINT flags = D3D11_CREATE_DEVICE_BGRA_SUPPORT;
+#if defined(_DEBUG)
+        flags |= D3D11_CREATE_DEVICE_DEBUG;
+#endif
+        constexpr D3D_FEATURE_LEVEL levels[]{
+            D3D_FEATURE_LEVEL_11_1,
+            D3D_FEATURE_LEVEL_11_0,
+            D3D_FEATURE_LEVEL_10_1,
+            D3D_FEATURE_LEVEL_10_0
+        };
+        D3D_FEATURE_LEVEL obtained{};
+        HRESULT result = D3D11CreateDevice(
+            nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, flags, levels,
+            static_cast<UINT>(std::size(levels)), D3D11_SDK_VERSION,
+            d3d_device_.GetAddressOf(), &obtained, d3d_context_.GetAddressOf());
+        if (result == E_INVALIDARG) {
+            result = D3D11CreateDevice(
+                nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, flags, levels + 1,
+                static_cast<UINT>(std::size(levels) - 1), D3D11_SDK_VERSION,
+                d3d_device_.GetAddressOf(), &obtained, d3d_context_.GetAddressOf());
+        }
+        if (FAILED(result)) {
+#if defined(_DEBUG)
+            flags &= ~D3D11_CREATE_DEVICE_DEBUG;
+#endif
+            result = D3D11CreateDevice(
+                nullptr, D3D_DRIVER_TYPE_WARP, nullptr, flags, levels + 1,
+                static_cast<UINT>(std::size(levels) - 1), D3D11_SDK_VERSION,
+                d3d_device_.GetAddressOf(), &obtained, d3d_context_.GetAddressOf());
+        }
+        if (FAILED(result)) return false;
+
+        Microsoft::WRL::ComPtr<IDXGIDevice> dxgi_device;
+        if (FAILED(d3d_device_.As(&dxgi_device))) return false;
+        if (FAILED(d2d_factory_->CreateDevice(dxgi_device.Get(), d2d_device_.GetAddressOf()))) return false;
+        if (FAILED(d2d_device_->CreateDeviceContext(
+                D2D1_DEVICE_CONTEXT_OPTIONS_NONE, d2d_context_.GetAddressOf()))) return false;
+        d2d_context_->SetDpi(dpi_, dpi_);
+        d2d_context_->SetUnitMode(D2D1_UNIT_MODE_DIPS);
+
+        Microsoft::WRL::ComPtr<IDXGIAdapter> adapter;
+        Microsoft::WRL::ComPtr<IDXGIFactory2> factory;
+        if (FAILED(dxgi_device->GetAdapter(adapter.GetAddressOf()))) return false;
+        if (FAILED(adapter->GetParent(__uuidof(IDXGIFactory2),
+                                      reinterpret_cast<void**>(factory.GetAddressOf())))) return false;
+
+        DXGI_SWAP_CHAIN_DESC1 description{};
+        description.Width = width_;
+        description.Height = height_;
+        description.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+        description.SampleDesc.Count = 1;
+        description.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+        description.BufferCount = 2;
+        description.Scaling = DXGI_SCALING_STRETCH;
+        description.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
+        description.AlphaMode = DXGI_ALPHA_MODE_IGNORE;
+        if (FAILED(factory->CreateSwapChainForHwnd(
+                d3d_device_.Get(), window_, &description, nullptr, nullptr,
+                swap_chain_.GetAddressOf()))) return false;
+        factory->MakeWindowAssociation(window_, DXGI_MWA_NO_ALT_ENTER);
+        return true;
+    }
+
+    bool create_window_resources() {
+        if (!swap_chain_ || !d2d_context_ || !d3d_device_) return false;
+        Microsoft::WRL::ComPtr<IDXGISurface> surface;
+        Microsoft::WRL::ComPtr<ID3D11Texture2D> backbuffer;
+        if (FAILED(swap_chain_->GetBuffer(0, __uuidof(IDXGISurface),
+                                          reinterpret_cast<void**>(surface.GetAddressOf())))) return false;
+        if (FAILED(swap_chain_->GetBuffer(0, __uuidof(ID3D11Texture2D),
+                                          reinterpret_cast<void**>(backbuffer.GetAddressOf())))) return false;
+        if (FAILED(d3d_device_->CreateRenderTargetView(
+                backbuffer.Get(), nullptr, backbuffer_view_.GetAddressOf()))) return false;
+
+        const auto bitmap_properties = D2D1::BitmapProperties1(
+            D2D1_BITMAP_OPTIONS_TARGET | D2D1_BITMAP_OPTIONS_CANNOT_DRAW,
+            D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_IGNORE), dpi_, dpi_);
+        if (FAILED(d2d_context_->CreateBitmapFromDxgiSurface(
+                surface.Get(), &bitmap_properties, target_bitmap_.GetAddressOf()))) return false;
+        d2d_context_->SetTarget(target_bitmap_.Get());
+
+        if (!make_brush(D2D1::ColorF(0x11172A), surface_brush_) ||
+            !make_brush(D2D1::ColorF(0x18213B), panel_brush_) ||
+            !make_brush(D2D1::ColorF(0xF4F7FF), text_brush_) ||
+            !make_brush(D2D1::ColorF(0x94A4CA), text_muted_brush_) ||
+            !make_brush(D2D1::ColorF(0xFFD36A), warm_brush_) ||
+            !make_brush(D2D1::ColorF(0x48E5D2), accent_brush_)) return false;
+        return true;
+    }
+
+    void release_window_resources() noexcept {
+        if (d2d_context_) d2d_context_->SetTarget(nullptr);
+        accent_brush_.Reset();
+        warm_brush_.Reset();
+        text_muted_brush_.Reset();
+        text_brush_.Reset();
+        panel_brush_.Reset();
+        surface_brush_.Reset();
+        target_bitmap_.Reset();
+        backbuffer_view_.Reset();
+        if (d3d_context_) {
+            d3d_context_->ClearState();
+            d3d_context_->Flush();
+        }
+    }
+
+    bool recreate_device() {
+        release_window_resources();
+        swap_chain_.Reset();
+        d2d_context_.Reset();
+        d2d_device_.Reset();
+        d3d_context_.Reset();
+        d3d_device_.Reset();
+        occluded_ = false;
+        return create_device_resources() && create_window_resources();
+    }
+
+    bool make_brush(const D2D1_COLOR_F& color,
+                    Microsoft::WRL::ComPtr<ID2D1SolidColorBrush>& brush) {
+        brush.Reset();
+        return d2d_context_ &&
+               SUCCEEDED(d2d_context_->CreateSolidColorBrush(color, brush.GetAddressOf()));
+    }
+
+    static D2D1_POINT_2F to_point(Vec2 point) noexcept {
+        return D2D1::Point2F(static_cast<float>(point.x), static_cast<float>(point.y));
+    }
+
+    static D2D1_RECT_F to_rect(RectD rect) noexcept {
+        return D2D1::RectF(static_cast<float>(rect.x), static_cast<float>(rect.y),
+                           static_cast<float>(rect.right()), static_cast<float>(rect.bottom()));
+    }
+
+    static Color branch_color(std::string_view branch) noexcept {
+        if (branch == "NIHILISM") return {0.38f, 0.42f, 0.58f, 1.0f};
+        if (branch == "REALITY") return {0.30f, 0.84f, 0.96f, 1.0f};
+        if (branch == "INTIMACY") return {0.96f, 0.42f, 0.66f, 1.0f};
+        if (branch == "FUSING") return {0.70f, 0.42f, 0.98f, 1.0f};
+        if (branch == "DESIGNING") return {0.32f, 0.88f, 0.68f, 1.0f};
+        if (branch == "METHODOLOGIES") return {0.40f, 0.62f, 1.0f, 1.0f};
+        if (branch == "PURPOSE") return {1.0f, 0.73f, 0.30f, 1.0f};
+        if (branch == "GROWING") return {0.58f, 0.92f, 0.34f, 1.0f};
+        if (branch == "UNIVERSING") return {0.98f, 0.47f, 0.35f, 1.0f};
+        if (branch == "CEREMONIES") return {0.94f, 0.72f, 0.90f, 1.0f};
+        return {1.0f, 0.83f, 0.42f, 1.0f};
+    }
+
+    static std::array<std::wstring_view, 6> workspace_names() noexcept {
+        return {L"MY LIGHT", L"2D FRACTAL", L"3D FRACTAL", L"OPERATIONS",
+                L"TIME / MEDIA", L"SYSTEM RELATION"};
+    }
+
+    static std::wstring operand_summary(const Operand& operand) {
+        const auto scalar = [](double value) {
+            std::wostringstream stream;
+            stream << std::fixed << std::setprecision(3) << value;
+            return stream.str();
+        };
+        const auto clipped = [](std::wstring value) {
+            if (value.size() > 42) value = value.substr(0, 39) + L"...";
+            return value;
+        };
+        return std::visit([&](const auto& value) -> std::wstring {
+            using T = std::decay_t<decltype(value)>;
+            if constexpr (std::is_same_v<T, std::monostate>) return L"empty";
+            else if constexpr (std::is_same_v<T, bool>) return value ? L"true" : L"false";
+            else if constexpr (std::is_same_v<T, std::int64_t>) return std::to_wstring(value);
+            else if constexpr (std::is_same_v<T, double>) {
+                return scalar(value);
+            } else if constexpr (std::is_same_v<T, std::string>) return L"text: " + clipped(utf8_to_wide(value));
+            else if constexpr (std::is_same_v<T, NumberList>) {
+                return L"numbers[" + std::to_wstring(value.size()) + L"]" +
+                    (value.empty() ? L"" : L" first=" + scalar(value.front()));
+            }
+            else if constexpr (std::is_same_v<T, NameList>) {
+                if (value.empty()) return L"names[0]";
+                return L"names[" + std::to_wstring(value.size()) + L"] first=" +
+                    clipped(utf8_to_wide(value.front()));
+            } else if constexpr (std::is_same_v<T, ComplexList>) {
+                return L"complex[" + std::to_wstring(value.size()) + L"]" +
+                    (value.empty() ? L"" : L" first=" + scalar(value.front().real()) + L"+" +
+                                           scalar(value.front().imag()) + L"i");
+            } else if constexpr (std::is_same_v<T, Point2List>) {
+                return L"points2[" + std::to_wstring(value.size()) + L"]" +
+                    (value.empty() ? L"" : L" first=(" + scalar(value.front().x) + L", " +
+                                           scalar(value.front().y) + L")");
+            } else if constexpr (std::is_same_v<T, Point3List>) {
+                return L"points3[" + std::to_wstring(value.size()) + L"]" +
+                    (value.empty() ? L"" : L" first=(" + scalar(value.front().x) + L", " +
+                                           scalar(value.front().y) + L", " +
+                                           scalar(value.front().z) + L")");
+            } else if constexpr (std::is_same_v<T, Vec2>) {
+                return L"vec2(" + scalar(value.x) + L", " + scalar(value.y) + L")";
+            } else if constexpr (std::is_same_v<T, Vec3>) {
+                return L"vec3(" + scalar(value.x) + L", " + scalar(value.y) + L", " +
+                    scalar(value.z) + L")";
+            } else if constexpr (std::is_same_v<T, Matrix>) {
+                return L"matrix " + std::to_wstring(value.rows) + L"x" + std::to_wstring(value.columns) +
+                    (value.values.empty() ? L"" : L" first=" + scalar(value.values.front()));
+            } else if constexpr (std::is_same_v<T, RelationValue>) {
+                return L"relation pairs=" + std::to_wstring(value.pairs.size());
+            } else if constexpr (std::is_same_v<T, GraphValue>) {
+                return L"graph vertices=" + std::to_wstring(value.vertices.size()) + L" edges=" +
+                    std::to_wstring(value.edges.size());
+            } else if constexpr (std::is_same_v<T, ProbabilityValue>) {
+                return L"probability outcomes=" + std::to_wstring(value.outcomes.size()) +
+                    (value.weights.empty() ? L"" : L" first-weight=" + scalar(value.weights.front()));
+            } else if constexpr (std::is_same_v<T, TimeValue>) {
+                return L"time seconds=" + scalar(value.seconds);
+            } else if constexpr (std::is_same_v<T, ResourceRoute>) {
+                return L"resource: " + clipped(utf8_to_wide(value.path));
+            } else if constexpr (std::is_same_v<T, AuthoredBodyRoute>) {
+                return L"authored body: " + clipped(utf8_to_wide(value.route));
+            } else if constexpr (std::is_same_v<T, TermValue>) {
+                return L"term " + clipped(utf8_to_wide(value.operation)) + L" args=" +
+                    std::to_wstring(value.arguments.size());
+            } else if constexpr (std::is_same_v<T, OperadTreeValue>) {
+                return L"operad tree nodes=" + std::to_wstring(value.labels.size());
+            } else if constexpr (std::is_same_v<T, OperadSubstitutions>) {
+                return L"operad substitutions=" + std::to_wstring(value.grafts.size());
+            } else if constexpr (std::is_same_v<T, VoronoiDiagram>) {
+                return L"Voronoi sites=" + std::to_wstring(value.sites.size()) + L" cells=" +
+                    std::to_wstring(value.cells.size());
+            } else if constexpr (std::is_same_v<T, FreeModuleValue>) {
+                return L"free module " + clipped(utf8_to_wide(value.ring)) + L" rank=" +
+                    std::to_wstring(value.basis.size());
+            } else if constexpr (std::is_same_v<T, DivinandValue>) {
+                return L"divinand units=" + std::to_wstring(value.units.size()) + L" operators=" +
+                    std::to_wstring(value.assigned_operators.size()) + L" extent=" +
+                    std::to_wstring(value.catalog_extent);
+            } else if constexpr (std::is_same_v<T, ExpressionRoute>) {
+                return L"expression " + std::to_wstring(value.value);
+            }
+            else return L"typed operand";
+        }, operand.body);
+    }
+
+    float draw_route(const AppliedOperation& route,
+                     float x, float y, float width) {
+        if (route.operator_world_node == no_node || route.catalog_index >= light_catalog.size()) return y;
+        const LightDefinition& definition = light_catalog[route.catalog_index];
+        const std::wstring heading = utf8_to_wide(std::string(definition.unit) + " → " +
+                                                   std::string(definition.code));
+        text(heading, D2D1::RectF(x, y, x + width, y + 18.0f), mono_format_.Get(), accent_brush_.Get());
+        y += 18.0f;
+        text(utf8_to_wide(definition.origin), D2D1::RectF(x, y, x + width, y + 17.0f),
+             small_format_.Get(), text_muted_brush_.Get());
+        y += 17.0f;
+        if (!route.operands.empty() || route.result) {
+            std::wstring operands = L"operands: ";
+            for (std::size_t index = 0; index < route.operands.size(); ++index) {
+                if (index) operands += L" · ";
+                operands += utf8_to_wide(route.operands[index].role) + L"=";
+                operands += operand_summary(route.operands[index].value);
+            }
+            text(operands, D2D1::RectF(x, y, x + width, y + 17.0f), small_format_.Get(),
+                 text_muted_brush_.Get());
+            y += 17.0f;
+            const std::wstring result = route.result ? L"result: " + operand_summary(*route.result)
+                                                     : L"result: operands/domain pending · route retained";
+            text(result, D2D1::RectF(x, y, x + width, y + 17.0f), small_format_.Get(), warm_brush_.Get());
+            y += 17.0f;
+        }
+        text(utf8_to_wide("consumer: " + route.consumer), D2D1::RectF(x, y, x + width, y + 17.0f),
+             small_format_.Get(), text_muted_brush_.Get());
+        return y + 24.0f;
+    }
+
+    HWND window_{};
+    std::uint32_t width_{1};
+    std::uint32_t height_{1};
+    float dpi_{96.0f};
+    bool occluded_{};
+    bool drawing_{};
+    bool plan_valid_{};
+    std::uint64_t planned_revision_{};
+    PortrayalPlan portrayal_{};
+    LightRuntime plan_runtime_{8};
+
+    Microsoft::WRL::ComPtr<ID2D1Factory1> d2d_factory_;
+    Microsoft::WRL::ComPtr<IDWriteFactory> write_factory_;
+    Microsoft::WRL::ComPtr<IDWriteTextFormat> title_format_;
+    Microsoft::WRL::ComPtr<IDWriteTextFormat> heading_format_;
+    Microsoft::WRL::ComPtr<IDWriteTextFormat> label_format_;
+    Microsoft::WRL::ComPtr<IDWriteTextFormat> small_format_;
+    Microsoft::WRL::ComPtr<IDWriteTextFormat> mono_format_;
+    Microsoft::WRL::ComPtr<ID3D11Device> d3d_device_;
+    Microsoft::WRL::ComPtr<ID3D11DeviceContext> d3d_context_;
+    Microsoft::WRL::ComPtr<IDXGISwapChain1> swap_chain_;
+    Microsoft::WRL::ComPtr<ID2D1Device> d2d_device_;
+    Microsoft::WRL::ComPtr<ID2D1DeviceContext> d2d_context_;
+    Microsoft::WRL::ComPtr<ID2D1Bitmap1> target_bitmap_;
+    Microsoft::WRL::ComPtr<ID3D11RenderTargetView> backbuffer_view_;
+    Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> surface_brush_;
+    Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> panel_brush_;
+    Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> text_brush_;
+    Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> text_muted_brush_;
+    Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> warm_brush_;
+    Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> accent_brush_;
+};
+
+} // namespace milesing
+
+#endif

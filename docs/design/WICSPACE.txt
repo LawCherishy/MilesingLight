@@ -1,0 +1,30 @@
+WINDOWS IMAGING COMPONENT CONCEPT SPACE
+
+PURPOSE
+WIC gives deliberate local image opening and original generated-image output to the same authored world.
+
+FEATURE TO DIRECT CODE
+- Create one IWICImagingFactory for the application.
+- Open only a deliberately chosen local stream after size, path, signature, and resource-bound checks.
+- Ask WIC for an explicit decoder; receipt the exact container and component used.
+- Read frame count, dimensions, pixel format, color context, orientation, and metadata before allocating full pixels.
+- Apply orientation and color conversion explicitly.
+- Convert portrayal surfaces to a renderer-owned pixel format such as premultiplied BGRA.
+- Decode only requested frames and requested scale; release decoder and bitmap resources after use.
+- Preserve the chosen source relation and authored crop/transform separately from decoded pixels.
+- Generate thumbnails and previews inside declared dimensions and byte ceilings.
+- Encode deliberate output through a chosen encoder and exact inclusion preview.
+- Strip private metadata by default from an authored export unless Miles explicitly includes it.
+- Keep unsupported or third-party codec involvement visible instead of silently extending package claims.
+
+LIGHT INTEGRATION
+- An image can be an operand, authored resource, generated result, texture, 2D body, 3D portal surface, timeline frame, or further rooted input.
+- FILTERAGE can reveal purpose-sized image structure only when its supplied complex/value/threshold domain fits.
+- FRACTALLY can generate requested image geometry from exact contraction maps.
+- PSYCHE can operate on an exact finite signal derived from deliberately selected image data.
+- Divinand preserves source, authored meaning, crop, transformation recipe, and recovery route.
+
+MICROSOFT REFERENCE
+https://learn.microsoft.com/en-us/windows/win32/wic/-wic-lh
+https://learn.microsoft.com/en-us/windows/win32/wic/-wic-howwicworks
+https://learn.microsoft.com/en-us/windows/win32/wic/-wic-creating-encoder

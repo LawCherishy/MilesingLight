@@ -1,0 +1,663 @@
+#ifndef MILESING_3D_FRACTALIZER_INCLUDED
+#define MILESING_3D_FRACTALIZER_INCLUDED 1
+
+namespace milesing {
+
+inline Vec3 subtract3(Vec3 a, Vec3 b) { return {a.x - b.x, a.y - b.y, a.z - b.z}; }
+inline double dot3(Vec3 a, Vec3 b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
+inline Vec3 cross3(Vec3 a, Vec3 b) {
+    return {a.y * b.z - a.z * b.y,
+            a.z * b.x - a.x * b.z,
+            a.x * b.y - a.y * b.x};
+}
+inline Vec3 normalize3(Vec3 value) {
+    const double magnitude = length(value);
+    return magnitude <= 1.0e-12 ? Vec3{} : value * (1.0 / magnitude);
+}
+
+struct Ray3 {
+    Vec3 origin{};
+    Vec3 direction{0.0, 0.0, 1.0};
+};
+
+struct CameraBasis3D {
+    Vec3 position{};
+    Vec3 forward{};
+    Vec3 right{};
+    Vec3 up{};
+};
+
+struct Camera3D {
+    Vec3 target{};
+    double yaw{-0.62};
+    double pitch{0.31};
+    double distance{860.0};
+    double field_of_view{54.0 * pi / 180.0};
+    double near_plane{1.0};
+    bool orthographic{};
+    double orthographic_scale{520.0};
+
+    CameraBasis3D basis() const {
+        const double cp = std::cos(pitch);
+        const Vec3 outward{cp * std::cos(yaw), std::sin(pitch), cp * std::sin(yaw)};
+        const Vec3 position = target + outward * distance;
+        const Vec3 forward = normalize3(subtract3(target, position));
+        Vec3 right = normalize3(cross3(forward, {0.0, 1.0, 0.0}));
+        if (length(right) <= 1.0e-12) right = {1.0, 0.0, 0.0};
+        const Vec3 up = normalize3(cross3(right, forward));
+        return {position, forward, right, up};
+    }
+
+    void orbit(Vec2 pixels) {
+        yaw += pixels.x * 0.006;
+        pitch = std::clamp(pitch + pixels.y * 0.006, -1.45, 1.45);
+    }
+
+    void dolly(double wheel_steps) {
+        distance = std::clamp(distance * std::exp(-wheel_steps * 0.12), 85.0, 5200.0);
+    }
+
+    void pan_pixels(Vec2 pixels, RectD viewport) {
+        const CameraBasis3D frame = basis();
+        const double scale = orthographic
+            ? orthographic_scale / std::max(viewport.height, 1.0)
+            : distance * std::tan(field_of_view * 0.5) * 2.0 /
+                  std::max(viewport.height, 1.0);
+        target = target + frame.right * (-pixels.x * scale) + frame.up * (pixels.y * scale);
+    }
+
+    std::optional<Vec3> project(Vec3 authored, RectD viewport) const {
+        const CameraBasis3D frame = basis();
+        const Vec3 relative = subtract3(authored, frame.position);
+        const double depth = dot3(relative, frame.forward);
+        if (depth <= near_plane) return std::nullopt;
+        const double x = dot3(relative, frame.right);
+        const double y = dot3(relative, frame.up);
+        double sx{};
+        double sy{};
+        if (orthographic) {
+            const double pixels = viewport.height / std::max(orthographic_scale, 1.0);
+            sx = viewport.center().x + x * pixels;
+            sy = viewport.center().y - y * pixels;
+        } else {
+            const double focal = viewport.height * 0.5 / std::tan(field_of_view * 0.5);
+            sx = viewport.center().x + x * focal / depth;
+            sy = viewport.center().y - y * focal / depth;
+        }
+        return Vec3{sx, sy, depth};
+    }
+
+    // Ordinary inverse projection supplies the authored-space ray from which
+    // spatial attention is found.
+    Ray3 preimage_ray(Vec2 screen, RectD viewport) const {
+        const CameraBasis3D frame = basis();
+        if (orthographic) {
+            const double scale = orthographic_scale / std::max(viewport.height, 1.0);
+            const Vec3 origin = frame.position +
+                frame.right * ((screen.x - viewport.center().x) * scale) +
+                frame.up * (-(screen.y - viewport.center().y) * scale);
+            return {origin, frame.forward};
+        }
+        const double focal = viewport.height * 0.5 / std::tan(field_of_view * 0.5);
+        const double x = (screen.x - viewport.center().x) / std::max(focal, 1.0);
+        const double y = -(screen.y - viewport.center().y) / std::max(focal, 1.0);
+        return {frame.position,
+                normalize3(frame.forward + frame.right * x + frame.up * y)};
+    }
+};
+
+struct SpatialNode {
+    std::size_t id{no_node};
+    std::size_t catalog_index{};
+    Vec2 screen{};
+    double depth{};
+    double radius{};
+    bool selected{};
+    bool central{};
+    bool main_class{};
+};
+
+struct SpatialRelation {
+    std::size_t source{no_node};
+    std::size_t target{no_node};
+    Vec2 start{};
+    Vec2 end{};
+    double near_depth{};
+};
+
+struct SpatialStroke3D {
+    Vec2 start{};
+    Vec2 end{};
+    double depth{};
+    double alpha{};
+};
+
+struct PortalInto2D {
+    std::array<Vec2, 4> screen_corners{};
+    std::size_t world_route{no_node};
+    std::uint32_t requested_depth{1};
+    bool active{};
+};
+
+struct SpatialFrame {
+    RectD viewport{};
+    std::vector<SpatialNode> nodes{};
+    std::vector<SpatialRelation> relations{};
+    std::vector<SpatialStroke3D> generated_strokes{};
+    PortalInto2D planar_portal{};
+    std::size_t visible_cardinality{};
+};
+
+class Fractalizer3D {
+public:
+    Fractalizer3D() = default;
+    explicit Fractalizer3D(LightRuntime& runtime) : runtime_(&runtime) {}
+
+    void bind(LightRuntime& runtime) { runtime_ = &runtime; }
+    Camera3D& camera() { return camera_; }
+    const Camera3D& camera() const { return camera_; }
+    std::int64_t spin_turn() const { return spin_turn_; }
+    const std::optional<AppliedOperation>& last_receipt() const { return last_receipt_; }
+    std::span<const AppliedOperation> pending_receipts() const {
+        return {pending_receipts_.data(), pending_receipts_.size()};
+    }
+    std::uint64_t discarded_receipt_count() const { return discarded_receipts_; }
+
+    AppliedReceiptDrain take_receipts() {
+        AppliedReceiptDrain drain{std::move(pending_receipts_), discarded_receipts_};
+        pending_receipts_.clear();
+        discarded_receipts_ = 0;
+        return drain;
+    }
+
+    void arrange_light(AuthoredWorld& world, std::int64_t turn) {
+        spin_turn_ = turn;
+        const std::size_t center_id = central_node(world);
+        WorldNode* center = world.find(center_id);
+        if (!center) return;
+        center->spatial = {};
+        center->extent = std::max(center->extent, 43.0);
+
+        std::vector<WorldNode*> classes;
+        for (WorldNode& node : world.nodes) {
+            if (node.parent == center_id) classes.push_back(&node);
+        }
+        if (classes.empty()) return;
+
+        NameList class_names;
+        NameList subclass_names;
+        class_names.reserve(classes.size());
+        for (WorldNode* branch : classes) {
+            class_names.emplace_back(light_catalog[branch->catalog_index].unit);
+            for (const WorldNode& candidate : world.nodes) {
+                if (candidate.parent == branch->id) {
+                    subclass_names.emplace_back(light_catalog[candidate.catalog_index].unit);
+                }
+            }
+        }
+        NameList spun_subclasses = subclass_names;
+        std::optional<AppliedOperation> spin_application;
+        if (const std::optional<AuthoredInvocation> spun = invoke_rooted(
+                world, "UNIVERSING",
+                {designate(world, Operand::names(class_names),
+                           "actual central class order", center_id),
+                 designate(world, Operand::names(subclass_names),
+                           "actual subclass order", center_id),
+                 designate(world, Operand::integer(turn),
+                           "requested discrete spatial turn", center_id)},
+                "shared spatial coordinates and relation portrayal",
+                "turn the shared Light classes into their spatial organization")) {
+            spin_application = spun->application;
+            if (spun->invocation.value) {
+                if (const NameList* order = std::get_if<NameList>(&spun->invocation.value->body);
+                    order && order->size() == class_names.size() + subclass_names.size()) {
+                    std::vector<WorldNode*> rotated_classes;
+                    rotated_classes.reserve(classes.size());
+                    for (std::size_t index = 0; index < class_names.size(); ++index) {
+                        if (WorldNode* node = world.find_unit((*order)[index])) rotated_classes.push_back(node);
+                    }
+                    if (rotated_classes.size() == classes.size()) classes = std::move(rotated_classes);
+                    spun_subclasses.assign(order->begin() + static_cast<std::ptrdiff_t>(class_names.size()),
+                                           order->end());
+                }
+            }
+        }
+        const double step = 2.0 * pi / static_cast<double>(classes.size());
+        for (std::size_t class_index = 0; class_index < classes.size(); ++class_index) {
+            WorldNode& branch = *classes[class_index];
+            const double angle = -pi * 0.5 + step * static_cast<double>(class_index);
+
+            // The operator assigned to the actual GIVENS body acts on these
+            // class-ring coordinates; a second plane call supplies the lift.
+            Vec3 branch_position = invoke_rotate_xy(world, branch.id,
+                                                    {280.0, 0.0, 0.0}, angle,
+                                                    "central class ring rotation");
+            branch_position = invoke_rotate_yz(world, branch.id, branch_position,
+                                               0.22 * std::sin(angle * 2.0),
+                                               "central class spatial lift");
+            branch.spatial = branch_position;
+            branch.rotation = angle;
+            branch.extent = 32.0;
+
+            std::vector<WorldNode*> subclasses;
+            for (WorldNode& candidate : world.nodes) {
+                if (candidate.parent == branch.id) {
+                    subclasses.push_back(&candidate);
+                }
+            }
+            std::stable_sort(subclasses.begin(), subclasses.end(), [&](const WorldNode* left,
+                                                                       const WorldNode* right) {
+                const std::string_view left_name = light_catalog[left->catalog_index].unit;
+                const std::string_view right_name = light_catalog[right->catalog_index].unit;
+                const auto left_at = std::find(spun_subclasses.begin(), spun_subclasses.end(), left_name);
+                const auto right_at = std::find(spun_subclasses.begin(), spun_subclasses.end(), right_name);
+                return left_at < right_at;
+            });
+            const Vec3 radial = normalize3(branch_position);
+            Vec3 tangent = normalize3(cross3({0.0, 1.0, 0.0}, radial));
+            if (length(tangent) <= 1.0e-12) tangent = {1.0, 0.0, 0.0};
+            const Vec3 normal = normalize3(cross3(radial, tangent));
+            for (std::size_t sub_index = 0; sub_index < subclasses.size(); ++sub_index) {
+                const double theta = 0.51 * static_cast<double>(sub_index + 1);
+                const Vec2 spiral = invoke_log_spiral(world, subclasses[sub_index]->id,
+                                                      58.0, 0.068, theta,
+                                                      "subclass spatial spiral");
+                subclasses[sub_index]->spatial = branch_position +
+                    tangent * spiral.x + normal * spiral.y +
+                    radial * (13.0 * std::sin(theta * 1.7));
+                subclasses[sub_index]->rotation = angle + theta;
+                subclasses[sub_index]->extent = 19.0;
+            }
+        }
+        if (spin_application) last_receipt_ = std::move(spin_application);
+        ++world.revision;
+    }
+
+    void rotate_selection_givens(AuthoredWorld& world,
+                                 std::span<const std::size_t> selection,
+                                 double radians) {
+        if (selection.empty()) return;
+        Vec3 pivot{};
+        std::size_t count{};
+        for (std::size_t id : selection) {
+            if (const WorldNode* node = world.find(id)) {
+                pivot = pivot + node->spatial;
+                ++count;
+            }
+        }
+        if (count == 0) return;
+        pivot = pivot * (1.0 / static_cast<double>(count));
+        const std::array<double, 5> matrix = invoke_givens(
+            world, selection.front(), std::cos(radians), -std::sin(radians),
+            "selected spatial transform");
+        for (std::size_t id : selection) {
+            if (WorldNode* node = world.find(id); node && !node->locked) {
+                const Vec3 relative = subtract3(node->spatial, pivot);
+                node->spatial = pivot + Vec3{
+                    matrix[0] * relative.x + matrix[1] * relative.y,
+                    matrix[2] * relative.x + matrix[3] * relative.y,
+                    relative.z};
+                node->rotation += radians;
+            }
+        }
+        ++world.revision;
+    }
+
+    void move_selection_in_view(AuthoredWorld& world,
+                                std::span<const std::size_t> selection,
+                                Vec2 pixels, RectD viewport) {
+        const CameraBasis3D basis = camera_.basis();
+        const double scale = camera_.distance * std::tan(camera_.field_of_view * 0.5) * 2.0 /
+                             std::max(viewport.height, 1.0);
+        const Vec3 delta = basis.right * (pixels.x * scale) + basis.up * (-pixels.y * scale);
+        bool moved = false;
+        for (std::size_t id : selection) {
+            if (WorldNode* node = world.find(id); node && !node->locked) {
+                node->spatial = node->spatial + delta;
+                moved = true;
+            }
+        }
+        if (moved) ++world.revision;
+    }
+
+    SpatialFrame compose(const AuthoredWorld& world, RectD viewport,
+                         std::span<const std::size_t> selection) const {
+        begin_portrayal_recomputation();
+        SpatialFrame frame;
+        frame.viewport = viewport;
+        frame.nodes.reserve(world.nodes.size());
+        frame.relations.reserve(world.relations.size());
+        const std::size_t center_id = central_node(world);
+
+        for (const WorldRelation& relation : world.relations) {
+            const WorldNode* source = world.find(relation.source);
+            const WorldNode* target = world.find(relation.target);
+            if (!source || !target || !source->visible || !target->visible) continue;
+            const std::optional<Vec3> a = camera_.project(source->spatial, viewport);
+            const std::optional<Vec3> b = camera_.project(target->spatial, viewport);
+            if (!a || !b) continue;
+            frame.relations.push_back({relation.source, relation.target,
+                                       {a->x, a->y}, {b->x, b->y},
+                                       std::min(a->z, b->z)});
+        }
+
+        for (const WorldNode& node : world.nodes) {
+            if (!node.visible) continue;
+            const std::optional<Vec3> projected = camera_.project(node.spatial, viewport);
+            if (!projected) continue;
+            double radius{};
+            if (camera_.orthographic) {
+                radius = node.extent * viewport.height /
+                         std::max(camera_.orthographic_scale, 1.0);
+            } else {
+                const double focal = viewport.height * 0.5 /
+                                     std::tan(camera_.field_of_view * 0.5);
+                radius = node.extent * focal / projected->z;
+            }
+            radius = std::clamp(radius, 3.5, 68.0);
+            const Vec2 screen{projected->x, projected->y};
+            const RectD expanded{viewport.x - radius, viewport.y - radius,
+                                 viewport.width + radius * 2.0,
+                                 viewport.height + radius * 2.0};
+            if (!expanded.contains(screen)) continue;
+            frame.nodes.push_back({node.id, node.catalog_index, screen, projected->z, radius,
+                                   contains_id(selection, node.id), node.id == center_id,
+                                   node.parent == center_id});
+        }
+        std::stable_sort(frame.nodes.begin(), frame.nodes.end(),
+                         [](const SpatialNode& a, const SpatialNode& b) {
+                             return a.depth > b.depth;
+                         });
+        frame.visible_cardinality = invoke_cardinality(world, frame.nodes);
+        build_hutchinson_portrayal(world, frame);
+        frame.planar_portal = make_planar_portal(world, viewport, center_id);
+        return frame;
+    }
+
+    std::optional<std::size_t> hit_test(const AuthoredWorld& world, Vec2 screen,
+                                        RectD viewport) const {
+        const Ray3 ray = camera_.preimage_ray(screen, viewport);
+        std::optional<std::size_t> result;
+        double nearest = std::numeric_limits<double>::max();
+        for (const WorldNode& node : world.nodes) {
+            if (!node.visible) continue;
+            const Vec3 offset = subtract3(ray.origin, node.spatial);
+            const double b = dot3(offset, ray.direction);
+            const double c = dot3(offset, offset) - node.extent * node.extent;
+            const double discriminant = b * b - c;
+            if (discriminant < 0.0) continue;
+            double distance = -b - std::sqrt(discriminant);
+            if (distance < 0.0) distance = -b + std::sqrt(discriminant);
+            if (distance >= 0.0 && distance < nearest) {
+                nearest = distance;
+                result = node.id;
+            }
+        }
+        return result;
+    }
+
+    void frame_all(const AuthoredWorld& world) {
+        if (world.nodes.empty()) return;
+        Vec3 center{};
+        std::size_t count{};
+        for (const WorldNode& node : world.nodes) {
+            if (!node.visible) continue;
+            center = center + node.spatial;
+            ++count;
+        }
+        if (count == 0) return;
+        center = center * (1.0 / static_cast<double>(count));
+        double radius{1.0};
+        for (const WorldNode& node : world.nodes) {
+            if (node.visible) radius = std::max(radius, length(subtract3(node.spatial, center)) + node.extent);
+        }
+        camera_.target = center;
+        camera_.distance = std::clamp(radius / std::tan(camera_.field_of_view * 0.42), 120.0, 5200.0);
+    }
+
+private:
+    Camera3D camera_{};
+    LightRuntime* runtime_{};
+    std::int64_t spin_turn_{};
+    mutable std::size_t last_visible_input_{std::numeric_limits<std::size_t>::max()};
+    mutable std::size_t last_visible_cardinality_{};
+    mutable std::optional<AppliedOperation> last_receipt_{};
+    mutable std::vector<AppliedOperation> pending_receipts_{};
+    mutable std::uint64_t discarded_receipts_{};
+    mutable LightRuntime portrayal_runtime_{};
+    mutable std::vector<AppliedOperation> portrayal_receipts_{};
+    mutable bool fractal_cache_ready_{};
+    mutable Point2List cached_fractal_shape_{};
+    static constexpr std::size_t maximum_pending_receipts_{1024};
+
+    void record_receipt(AppliedOperation application) const {
+        if (pending_receipts_.size() >= maximum_pending_receipts_) {
+            pending_receipts_.erase(pending_receipts_.begin());
+            ++discarded_receipts_;
+        }
+        pending_receipts_.push_back(std::move(application));
+        last_receipt_ = pending_receipts_.back();
+    }
+
+    void begin_portrayal_recomputation() const {
+        portrayal_runtime_.clear();
+        portrayal_receipts_.clear();
+    }
+
+    std::optional<AuthoredInvocation> invoke_portrayal(
+        const AuthoredWorld& world, std::string_view unit,
+        std::vector<OperandDesignation> designations,
+        std::string consumer, std::string purpose) const {
+        try {
+            AuthoredInvocation invocation = invoke_authored_light(
+                world, portrayal_runtime_, unit, std::move(designations),
+                std::move(consumer), std::move(purpose));
+            constexpr std::size_t maximum_portrayal_receipts = 8;
+            if (portrayal_receipts_.size() >= maximum_portrayal_receipts) {
+                portrayal_receipts_.erase(portrayal_receipts_.begin());
+            }
+            portrayal_receipts_.push_back(invocation.application);
+            return invocation;
+        } catch (const std::exception&) {
+            return std::nullopt;
+        }
+    }
+
+    static bool contains_id(std::span<const std::size_t> ids, std::size_t id) {
+        return std::find(ids.begin(), ids.end(), id) != ids.end();
+    }
+
+    static std::size_t central_node(const AuthoredWorld& world) {
+        for (const WorldNode& node : world.nodes) if (node.parent == no_node) return node.id;
+        return no_node;
+    }
+
+    static OperandDesignation designate(const AuthoredWorld& world, Operand value,
+                                         std::string role, std::size_t node_id = no_node) {
+        std::optional<std::size_t> authored_node;
+        std::optional<Vec3> position;
+        if (const WorldNode* node = world.find(node_id)) {
+            authored_node = node->id;
+            position = node->spatial;
+        }
+        return {0, std::move(value), std::move(role), authored_node, position};
+    }
+
+    std::optional<AuthoredInvocation> invoke_rooted(
+        const AuthoredWorld& world, std::string_view unit,
+        std::vector<OperandDesignation> designations,
+        std::string consumer, std::string purpose) const {
+        if (!runtime_) return std::nullopt;
+        try {
+            AuthoredInvocation invocation = invoke_authored_light(
+                world, *runtime_, unit, std::move(designations),
+                std::move(consumer), std::move(purpose));
+            record_receipt(invocation.application);
+            return invocation;
+        } catch (const std::exception&) {
+            return std::nullopt;
+        }
+    }
+
+    std::array<double, 5> invoke_givens(const AuthoredWorld& world,
+                                        std::size_t consumer_node,
+                                        double a, double b, std::string purpose) const {
+        if (const std::optional<AuthoredInvocation> invocation = invoke_rooted(
+                world, "GIVENS",
+                {designate(world, Operand::number(a), "active plane coordinate a", consumer_node),
+                 designate(world, Operand::number(b), "active plane coordinate b", consumer_node)},
+                "spatial coordinate transform", std::move(purpose))) {
+            if (invocation->invocation.value) {
+                if (const NumberList* values = std::get_if<NumberList>(
+                        &invocation->invocation.value->body); values && values->size() >= 5) {
+                    return {(*values)[0], (*values)[1], (*values)[2],
+                            (*values)[3], (*values)[4]};
+                }
+            }
+        }
+        return givens_rotation(a, b);
+    }
+
+    Vec3 invoke_rotate_xy(const AuthoredWorld& world, std::size_t consumer_node,
+                          Vec3 value, double angle, std::string purpose) const {
+        const std::array<double, 5> rotation = invoke_givens(
+            world, consumer_node, std::cos(angle), -std::sin(angle), std::move(purpose));
+        return {rotation[0] * value.x + rotation[1] * value.y,
+                rotation[2] * value.x + rotation[3] * value.y,
+                value.z};
+    }
+
+    Vec3 invoke_rotate_yz(const AuthoredWorld& world, std::size_t consumer_node,
+                          Vec3 value, double angle, std::string purpose) const {
+        const std::array<double, 5> rotation = invoke_givens(
+            world, consumer_node, std::cos(angle), -std::sin(angle), std::move(purpose));
+        return {value.x,
+                rotation[0] * value.y + rotation[1] * value.z,
+                rotation[2] * value.y + rotation[3] * value.z};
+    }
+
+    Vec2 invoke_log_spiral(const AuthoredWorld& world, std::size_t consumer_node,
+                           double a, double b, double theta, std::string purpose) const {
+        if (const std::optional<AuthoredInvocation> invocation = invoke_rooted(
+                world, "SPIRALLY",
+                {designate(world, Operand::number(a), "initial radius", consumer_node),
+                 designate(world, Operand::number(b), "radial growth", consumer_node),
+                 designate(world, Operand::number(theta), "authored angle", consumer_node)},
+                "authored spatial subclass coordinate", std::move(purpose))) {
+            if (invocation->invocation.value) {
+                if (const Vec2* point = std::get_if<Vec2>(&invocation->invocation.value->body)) {
+                    return *point;
+                }
+            }
+        }
+        return logarithmic_spiral(a, b, theta);
+    }
+
+    std::size_t invoke_cardinality(const AuthoredWorld& world,
+                                   const std::vector<SpatialNode>& visible) const {
+        if (visible.size() == last_visible_input_) return last_visible_cardinality_;
+        last_visible_input_ = visible.size();
+        last_visible_cardinality_ = visible.size();
+        if (!runtime_) return last_visible_cardinality_;
+        NameList supplied_set;
+        supplied_set.reserve(visible.size());
+        for (const SpatialNode& view : visible) {
+            supplied_set.emplace_back(light_catalog[view.catalog_index].unit);
+        }
+        if (const std::optional<AuthoredInvocation> invocation = invoke_portrayal(
+                world, "SIZE",
+                {designate(world, Operand::names(std::move(supplied_set)),
+                           "visible authored Light names")},
+                "spatial visible-cardinality portrayal",
+                "apply SIZE's assigned operator to the finite visible set")) {
+            if (invocation->invocation.value && invocation->invocation.value->numeric()) {
+                const double value = invocation->invocation.value->as_number();
+                if (value >= 0.0) last_visible_cardinality_ = static_cast<std::size_t>(value);
+            }
+        }
+        return last_visible_cardinality_;
+    }
+
+    void build_hutchinson_portrayal(const AuthoredWorld& world, SpatialFrame& frame) const {
+        // The actual FRACTALLY body receives the finite shape and affine maps.
+        // Each realized Hutchinson result is the next stage's operand and the
+        // final result directly supplies the spatial portrayal coordinates.
+        if (!fractal_cache_ready_) {
+            Point2List points{{0.0, 0.0}, {1.0, 0.0}, {0.5, 0.8660254037844386}};
+            const Matrix maps{3, 6,
+                {0.5, 0.0, 0.0, 0.5, 0.0, 0.0,
+                 0.5, 0.0, 0.0, 0.5, 0.5, 0.0,
+                 0.5, 0.0, 0.0, 0.5, 0.25, 0.4330127018922193}};
+            const WorldNode* consumer = world.find_unit("FRACTALLY");
+            for (std::uint32_t stage = 0; stage < 3; ++stage) {
+                const std::optional<AuthoredInvocation> invocation = invoke_portrayal(
+                    world, "FRACTALLY",
+                    {designate(world, Operand::points(points), "current finite shape",
+                               consumer ? consumer->id : no_node),
+                     designate(world, Operand::matrix(maps), "three affine contraction maps",
+                               consumer ? consumer->id : no_node)},
+                    "bounded spatial generated-stroke portrayal",
+                    "apply FRACTALLY's assigned Hutchinson operator for one requested finite stage");
+                if (!invocation || !invocation->invocation.value) break;
+                if (const Point2List* realized = std::get_if<Point2List>(
+                        &invocation->invocation.value->body)) {
+                    points = *realized;
+                } else {
+                    break;
+                }
+            }
+            cached_fractal_shape_ = std::move(points);
+            fractal_cache_ready_ = true;
+        }
+        const Point2List& points = cached_fractal_shape_;
+        const Vec3 anchor{-360.0, -210.0, 40.0};
+        constexpr double scale = 92.0;
+        for (std::size_t index = 0; index + 2 < points.size(); index += 3) {
+            const auto lift = [&](Vec2 point, std::size_t phase) {
+                return anchor + Vec3{(point.x - 0.5) * scale,
+                                     (point.y - 0.43) * scale,
+                                     13.0 * std::sin(point.x * 8.0 + static_cast<double>(phase))};
+            };
+            const std::array<Vec3, 3> triangle{{lift(points[index], index),
+                                                lift(points[index + 1], index + 1),
+                                                lift(points[index + 2], index + 2)}};
+            for (std::size_t edge = 0; edge < triangle.size(); ++edge) {
+                const std::optional<Vec3> a = camera_.project(triangle[edge], frame.viewport);
+                const std::optional<Vec3> b = camera_.project(
+                    triangle[(edge + 1) % triangle.size()], frame.viewport);
+                if (a && b) frame.generated_strokes.push_back({{a->x, a->y}, {b->x, b->y},
+                                                                std::min(a->z, b->z), 0.19});
+            }
+        }
+    }
+
+    PortalInto2D make_planar_portal(const AuthoredWorld& world, RectD viewport,
+                                    std::size_t route) const {
+        const WorldNode* center = world.find(route);
+        if (!center) return {};
+        const Vec3 origin = center->spatial + Vec3{0.0, -105.0, 0.0};
+        constexpr double half_width = 96.0;
+        constexpr double half_height = 58.0;
+        const std::array<Vec3, 4> corners{{origin + Vec3{-half_width, half_height, 0.0},
+                                           origin + Vec3{half_width, half_height, 0.0},
+                                           origin + Vec3{half_width, -half_height, 0.0},
+                                           origin + Vec3{-half_width, -half_height, 0.0}}};
+        PortalInto2D portal;
+        portal.world_route = route;
+        portal.requested_depth = 1;
+        portal.active = true;
+        for (std::size_t i = 0; i < corners.size(); ++i) {
+            const std::optional<Vec3> projected = camera_.project(corners[i], viewport);
+            if (!projected) {
+                portal.active = false;
+                break;
+            }
+            portal.screen_corners[i] = {projected->x, projected->y};
+        }
+        return portal;
+    }
+};
+
+} // namespace milesing
+
+#endif // MILESING_3D_FRACTALIZER_INCLUDED

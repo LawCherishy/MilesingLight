@@ -1,0 +1,223 @@
+#ifndef MILESING_SYSTEMLOGS_INCLUDED
+#define MILESING_SYSTEMLOGS_INCLUDED 1
+
+#ifndef MILESING_SUPPORT_INCLUDED
+#error SUPPORT.txt must be included before SYSTEMLOGS.txt
+#endif
+
+namespace milesing {
+
+enum class SystemPart {
+    processor,
+    graphics,
+    memory,
+    storage,
+    display,
+    input
+};
+
+inline std::string_view system_part_name(SystemPart part) noexcept {
+    switch (part) {
+    case SystemPart::processor: return "processor";
+    case SystemPart::graphics: return "graphics";
+    case SystemPart::memory: return "memory";
+    case SystemPart::storage: return "storage";
+    case SystemPart::display: return "display";
+    case SystemPart::input: return "input";
+    }
+    return "unknown";
+}
+
+struct MeasureContract {
+    std::string source;
+    std::string quantity;
+    std::string unit;
+    std::chrono::milliseconds sample_period{250};
+    std::chrono::milliseconds duration{1000};
+    std::chrono::milliseconds retention{0};
+    std::string expression_code;
+    std::string operand_role;
+    bool exact_grant{};
+};
+
+struct BitOccurrence {
+    std::uint64_t byte_position{};
+    std::uint8_t bit_position{};
+    bool value{};
+    Vec3 spatial_position{};
+};
+
+struct OperandPlacement {
+    std::string light_unit;
+    std::string function_code;
+    std::size_t operand_position{};
+    std::string role;
+    Vec3 spatial_position{};
+};
+
+struct HardwareLevel {
+    SystemPart part{SystemPart::processor};
+    double normalized{};
+    std::string unit{"synthetic ratio"};
+    std::chrono::milliseconds offset{};
+};
+
+struct SpatialSystemAssociation {
+    BitOccurrence bit;
+    std::vector<std::string> light_units;
+    std::vector<OperandPlacement> operands;
+    std::vector<HardwareLevel> levels;
+    std::vector<ExpressionRoute> calculation_routes;
+    std::vector<AppliedOperation> applied_operations;
+    ExpressionRoute rooted_expression{};
+    MeasureContract contract;
+    std::string purpose;
+    std::string divinand;
+    bool synthetic{true};
+};
+
+class SystemParticipation {
+public:
+    SystemParticipation() = default;
+
+    bool dormant() const noexcept { return !grant_.has_value(); }
+
+    const std::optional<MeasureContract>& grant() const noexcept { return grant_; }
+
+    bool begin_exact_grant(MeasureContract contract) {
+        if (contract.source.empty() || contract.quantity.empty() || contract.unit.empty() ||
+            contract.expression_code.empty() || contract.operand_role.empty()) {
+            return false;
+        }
+        if (!contract.exact_grant || contract.duration <= std::chrono::milliseconds::zero() ||
+            contract.sample_period <= std::chrono::milliseconds::zero() ||
+            contract.retention < std::chrono::milliseconds::zero()) {
+            return false;
+        }
+        grant_ = std::move(contract);
+        granted_levels_.clear();
+        opened_at_ = std::chrono::steady_clock::now();
+        return true;
+    }
+
+    bool admit_exact_level(SystemPart part, double normalized) {
+        if (!grant_ || !std::isfinite(normalized)) return false;
+        const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - opened_at_);
+        if (elapsed > grant_->duration || granted_levels_.size() >= maximum_granted_levels) {
+            close_grant();
+            return false;
+        }
+        granted_levels_.push_back({part, std::clamp(normalized, 0.0, 1.0), grant_->unit, elapsed});
+        return true;
+    }
+
+    void close_grant() noexcept {
+        grant_.reset();
+        granted_levels_.clear();
+    }
+
+    const std::vector<HardwareLevel>& granted_levels() const noexcept {
+        return granted_levels_;
+    }
+
+    static SpatialSystemAssociation synthetic_fixture(
+        const AuthoredWorld& world, LightRuntime& light, Vec3 root_position) {
+        const NumberList trace{0.18, 0.24, 0.31, 0.29, 0.43, 0.55, 0.49, 0.62};
+        const auto designation = [](Operand value, std::string role, Vec3 position) {
+            return OperandDesignation{0, std::move(value), std::move(role), std::nullopt, position};
+        };
+
+        auto present = invoke_authored_light(
+            world, light, "PRESENTLY",
+            {designation(Operand::numbers(trace), "finite synthetic hardware-level trace",
+                         root_position + Vec3{-0.52, 0.0, 0.0}),
+             designation(Operand::integer(3), "requested trace position",
+                         root_position + Vec3{-0.28, 0.0, 0.0})},
+            "SYSTEM RELATION",
+            "Read the supplied finite trace at its designated present position.");
+        auto change = invoke_authored_light(
+            world, light, "CHANGELY",
+            {designation(Operand::numbers(trace), "finite synthetic hardware-level trace",
+                         root_position + Vec3{-0.12, 0.0, 0.0}),
+             designation(Operand::integer(3), "adjacent difference position",
+                         root_position + Vec3{0.08, 0.0, 0.0})},
+            "SYSTEM RELATION",
+            "Measure actual adjacent change in the supplied finite trace.");
+        auto magnitude = invoke_authored_light(
+            world, light, "CRIES",
+            {designation(Operand::numbers(trace), "finite hardware-level vector",
+                         root_position + Vec3{0.28, 0.0, 0.0})},
+            "SYSTEM RELATION",
+            "Measure the supplied finite hardware-level vector.");
+        auto spectrum = invoke_authored_light(
+            world, light, "PSYCHE",
+            {designation(Operand::numbers(trace), "finite hardware-level signal",
+                         root_position + Vec3{0.52, 0.0, 0.0})},
+            "SYSTEM RELATION",
+            "Transform the supplied finite signal into its frequency result.");
+        auto grouped = invoke_authored_light(
+            world, light, "DESIGNING",
+            {designation(Operand::expression(spectrum.invocation.expression.value),
+                         "complete PSYCHE expression",
+                         root_position + Vec3{0.0, 0.18, 0.0})},
+            "SYSTEM RELATION",
+            "Retain the complete machine relation calculation as one operative whole.");
+
+        SpatialSystemAssociation association;
+        association.bit = {0, 0, true, root_position};
+        association.light_units = {
+            "MY LIGHT", "PRESENTLY", "CHANGELY", "CRIES", "PSYCHE", "DESIGNING"
+        };
+        association.operands = {
+            {"PRESENTLY", "eval_at", 0, "finite synthetic trace", root_position + Vec3{-0.52, 0.0, 0.0}},
+            {"PRESENTLY", "eval_at", 1, "requested time position", root_position + Vec3{-0.28, 0.0, 0.0}},
+            {"CHANGELY", "forward_diff", 0, "finite synthetic trace", root_position + Vec3{0.0, 0.0, 0.0}},
+            {"CRIES", "vector_norm", 0, "trace magnitude", root_position + Vec3{0.28, 0.0, 0.0}},
+            {"PSYCHE", "dft", 0, "finite signal", root_position + Vec3{0.52, 0.0, 0.0}}
+        };
+        association.levels = {
+            {SystemPart::processor, 0.18, "synthetic ratio", std::chrono::milliseconds{0}},
+            {SystemPart::graphics, 0.24, "synthetic ratio", std::chrono::milliseconds{250}},
+            {SystemPart::memory, 0.31, "synthetic ratio", std::chrono::milliseconds{500}},
+            {SystemPart::storage, 0.29, "synthetic ratio", std::chrono::milliseconds{750}}
+        };
+        association.calculation_routes = {
+            present.invocation.expression, change.invocation.expression, magnitude.invocation.expression,
+            spectrum.invocation.expression, grouped.invocation.expression
+        };
+        association.applied_operations = {
+            std::move(present.application), std::move(change.application),
+            std::move(magnitude.application), std::move(spectrum.application),
+            std::move(grouped.application)
+        };
+        association.rooted_expression = grouped.invocation.expression;
+        association.contract = {
+            "bounded synthetic fixture",
+            "relative participation",
+            "synthetic ratio",
+            std::chrono::milliseconds{250},
+            std::chrono::milliseconds{1000},
+            std::chrono::milliseconds{0},
+            "group(dft(trace))",
+            "portrayal demonstration",
+            false
+        };
+        association.purpose =
+            "Demonstrate one bit-rooted spatial relation among Light operands and named hardware levels.";
+        association.divinand =
+            "bit + position + Light routes + operand order + finite levels + purpose + source";
+        association.synthetic = true;
+        return association;
+    }
+
+private:
+    static constexpr std::size_t maximum_granted_levels = 16;
+    std::optional<MeasureContract> grant_;
+    std::vector<HardwareLevel> granted_levels_;
+    std::chrono::steady_clock::time_point opened_at_{};
+};
+
+} // namespace milesing
+
+#endif

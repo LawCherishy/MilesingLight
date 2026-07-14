@@ -1,0 +1,22 @@
+INTEGRITY CONCEPT SPACE
+
+PURPOSE
+Every durable work can prove which bytes were written, which exact Light and authored relations they represent, and whether reopening produced the same logical body.
+
+DIRECT INTEGRITY CHAIN
+- Hash each uncompressed canonical chunk with BCrypt SHA-256.
+- Record chunk type, generation, byte length, expanded ceiling, item ceiling, and hash in the manifest.
+- Hash the canonical manifest separately and place its digest in the fixed header.
+- Hash each selected embedded resource and record origin, license, and authored purpose.
+- Before commitment, parse the complete candidate from a fresh read handle and compare its logical root, counts, relation routes, expressions, and hashes.
+- After replacement, reopen the final path and compare again.
+- Keep the protected prior body's independent manifest and digest.
+- A migration writes a new candidate; it never edits the sole live work in place.
+- Package integrity covers executable, embedded shaders/fonts/assets, documentation, licenses, and the empty network-capability declaration.
+
+PROTECTION DISTINCTION
+SHA-256 proves change detection; it does not conceal authored work. Confidentiality uses an separately chosen authenticated-encryption and recovery route. The application presents these as distinct capacities.
+
+MICROSOFT REFERENCE
+https://learn.microsoft.com/en-us/windows/win32/seccng/creating-a-hash-with-cng
+https://learn.microsoft.com/en-us/windows/win32/seccng/encrypting-data-with-cng
