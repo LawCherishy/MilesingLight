@@ -12,7 +12,7 @@ SHA-256 8B9B37774A1D1C07CC29305A6E8125EFF115136009439DF589F41EF433DFF268
 
 ## Engineering realization
 
-The native implementation was developed by Miles with OpenAI Codex as an AI engineering collaborator under Miles's direction. The public source is frozen as seven C++20 source bodies under `src/`.
+The native implementation was developed by Miles using OpenAI Codex for AI-assisted engineering under Miles's direction and decisions. This records process provenance only; OpenAI, Codex, models, and model outputs hold no originating authorship, stewardship, succession, governance, or independent decision authority over MilesingLight. The public source is frozen as seven C++20 source bodies under `src/`.
 
 Each catalog entry states the mathematical tradition from which its finite operation is drawn. These names identify mathematical concepts and do not import another software implementation.
 

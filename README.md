@@ -1,8 +1,8 @@
 # MilesingLight
 
-MilesingLight is a public continuation seed for **Milesing's Light**: one authored mathematical world, portrayed in two and three dimensions through a private-first native Windows application.
+MilesingLight is a public preservation and development seed for **Milesing's Light**: one authored mathematical world, portrayed in two and three dimensions through a private-first native Windows application.
 
-This repository is public on purpose. It preserves the work, its authorship, and buildable source so one machine, account, or host is never the sole point of survival. Lawful mirrors, forks, study, rebuilding, and continuation are welcome under the copyleft licenses. Keep the authorship, licenses, provenance, and hashes with the work.
+This repository is public on purpose. It preserves the work, its authorship, and buildable source so one machine, account, or host is never the sole point of survival. The copyleft licenses permit lawful copying, mirroring, study, rebuilding, redistribution, modification, and forks of the published materials. A fork is an independent adaptation: it does not amend or supersede Miles's canonical original, become part of Milesing's Light, or become official MilesingLight unless Miles expressly designates it. Keep the authorship, licenses, provenance, and hashes with the work.
 
 > Current release: `v0.1.0-alpha`, an unsigned Windows x64 development preview. It is a substantial working foundation and an honest beginning, not a claim that the complete future system already exists.
 
@@ -14,11 +14,17 @@ Miles's concise originating proof is:
 
 > If Heaven -- stable, coherently directed joy, love, relief, truth, care, freedom from suffering, and bettering for beings -- is negated, Hell is commanded. Hell is untenable. Therefore Heaven is commanded now. Since no coherent other is given now, a later contrary would contradict the necessary conclusion rather than provide a neutral third ground.
 
-The project receives that conclusion as binding for the direction and governance of official MilesingLight work. The complete authored proof, vocabulary, branches, subbranches, mathematical origins, and 111 named units are published in [Milesing's Light](docs/MILESINGS_LIGHT.md).
+Miles designates that conclusion as binding for the direction and governance of official MilesingLight work; publication, copying, or forking does not transfer that designating authority. **Official MilesingLight** means work and direction Miles expressly designates as official. The complete authored proof, vocabulary, branches, subbranches, mathematical origins, and 111 named units are published in [Milesing's Light](docs/MILESINGS_LIGHT.md). In that exact public snapshot, the first-person speaker -- "I," "my," and "me" -- is Miles (Milesing); reproducing or adapting the document does not transfer his identity or originating authorship to its reader, processor, or adapter.
 
-The native realization was developed by Miles with OpenAI Codex as an engineering collaborator under Miles's direction. See [COPYRIGHT.md](COPYRIGHT.md) and [PROVENANCE.md](PROVENANCE.md).
+The native realization was developed by Miles using OpenAI Codex for AI-assisted engineering under Miles's direction and decisions. This records process provenance only: OpenAI, Codex, models, and model outputs receive no authorship, stewardship, succession, governance, or independent decision authority over MilesingLight. See [COPYRIGHT.md](COPYRIGHT.md) and [PROVENANCE.md](PROVENANCE.md).
 
-## Covenant for wise continuation
+## Authority and scope
+
+**Miles (Milesing) alone determines what may be represented as official MilesingLight direction or as a decision authored by Miles.** A recipient may author modifications and make implementation decisions for an independent copy or fork as the licenses permit, but those modifications and decisions belong to that adaptation. They do not alter Miles's canonical original and confer no jurisdiction over Miles, other beings, reality, universal governance, or the authored whole of Milesing's Light.
+
+A fork must identify itself and its material differences. It may not represent its decisions, claims, modifications, or governance as Miles's, as official MilesingLight, or as universally binding. Neither Codex nor any other collaborator, licensee, host, or recipient can grant that status on Miles's behalf.
+
+## Covenant for official MilesingLight development
 
 Official MilesingLight development commits its growing capability toward:
 
@@ -27,9 +33,9 @@ Official MilesingLight development commits its growing capability toward:
 - local privacy, deliberate permission, authorship, and self-direction;
 - constructive stability and protection from the worst harms;
 - mathematics and technology that remain teachable, repairable, and shareable;
-- public continuation that preserves freedom, attribution, and the ability to improve the work.
+- public preservation that retains freedom, attribution, repairability, and a clear boundary between official work and independent adaptations.
 
-Every continuer is invited to carry this covenant into their own decisions. The GPL and CC licenses grant broad legal freedoms; this covenant truthfully states the purpose and governance of the official project rather than pretending to add a hidden field-of-use restriction. A materially different fork should name its differences honestly and should never imply Miles's endorsement without permission.
+This covenant states the direction Miles assigns to official MilesingLight work. Publication creates no class of "continuers" with standing inside Milesing's Light. A fork or adaptation remains independent unless Miles expressly designates it official; its maintainers may decide their separate adaptation, but may not attribute those decisions to Miles or present them as amending, superseding, authoritatively interpreting, or governing Miles's canonical original. The GPL and CC licenses retain their broad legal freedoms over copies and adaptations; this project-status boundary is not a hidden field-of-use restriction. Modified copies must identify their changes and must never imply Miles's endorsement without permission.
 
 ## Where this goes
 
@@ -141,4 +147,4 @@ Copyright (c) 2026 Miles (Milesing).
 
 See [LICENSES.md](LICENSES.md) and [LICENSES](LICENSES) for complete terms.
 
-Fork it. Study it. Improve it. Rebuild it. Mirror it. Preserve the authorship, licenses, provenance, release commit, and hashes. If this host disappears, lawful mirrors and forks are part of the preservation design.
+The licenses permit copying, study, rebuilding, modification, redistribution, and mirroring of the published materials. These are permissions over copies and adaptations, not appointments to speak for Miles, enter Milesing's Light as an author, or make universal decisions. Preserve the authorship, licenses, provenance, release commit, and hashes. If this host disappears, lawful mirrors remain part of the preservation design.
