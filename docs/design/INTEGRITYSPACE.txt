@@ -1,9 +1,26 @@
 INTEGRITY CONCEPT SPACE
 
+STATUS
+V0.2 hashes each complete canonical candidate and reopened work.  Per-chunk and
+manifest hashing, embedded-resource evidence, package hashing and authenticated
+encryption below remain expansion targets.
+
 PURPOSE
 Every durable work can prove which bytes were written, which exact Light and authored relations they represent, and whether reopening produced the same logical body.
 
-DIRECT INTEGRITY CHAIN
+LIVE V0.2 INTEGRITY CHAIN
+- Form canonical version-2 text and parse it before writing any bytes.
+- Hash the complete candidate text with BCrypt SHA-256.
+- Write a sibling candidate, flush it, reopen it, compare its exact bytes and
+  hash, and parse it again.
+- Replace the destination while preserving a complete prior body when one
+  exists; reopen the final path and repeat exact-byte, hash and semantic checks.
+- Inventory prior/candidate siblings within explicit file-count and byte bounds;
+  prune only verified old canonical priors and hold uncertain bodies.
+- SHA-256 detects change.  It neither conceals the authored work nor proves who
+  created it.
+
+EXPANDED INTEGRITY TARGET
 - Hash each uncompressed canonical chunk with BCrypt SHA-256.
 - Record chunk type, generation, byte length, expanded ceiling, item ceiling, and hash in the manifest.
 - Hash the canonical manifest separately and place its digest in the fixed header.
@@ -15,7 +32,9 @@ DIRECT INTEGRITY CHAIN
 - Package integrity covers executable, embedded shaders/fonts/assets, documentation, licenses, and the empty network-capability declaration.
 
 PROTECTION DISTINCTION
-SHA-256 proves change detection; it does not conceal authored work. Confidentiality uses an separately chosen authenticated-encryption and recovery route. The application presents these as distinct capacities.
+Any later confidentiality feature uses a separately chosen authenticated local
+encryption and recovery route.  It remains distinct from current SHA-256 change
+detection and is absent from v0.2.
 
 MICROSOFT REFERENCE
 https://learn.microsoft.com/en-us/windows/win32/seccng/creating-a-hash-with-cng

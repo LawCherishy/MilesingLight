@@ -1,22 +1,40 @@
 STORAGE CONCEPT SPACE
 
+STATUS
+The current v0.2 body is canonical line-oriented text.  Chunk manifests,
+embedded resources, per-chunk hashes and compressed chunks below are expansion
+targets, not current file-format claims.
+
 PURPOSE
 Store the authored cause of the work: actual Light references, conceptual bodies, relations, rooted expressions, exact operands or routes, authored geometry, compact regeneration recipes, chosen resources, commands needed for recovery, and integrity evidence. Renderer caches and expanded possibilities remain disposable.
 
-ORIGINAL MILESING WORK BODY
+LIVE V0.2 WORK BODY
+- Header: `MILESING-LIGHT-WORKSPACE 2`.
+- Canonical records: WORLD, NODE, RELATION, ORDER, ATTENTION, EXPRESSION,
+  OPERAND, RESULT, APPLIED, DESIGNATION, and END.
+- Every NODE carries its exact self-number, operator-code and mathematical-origin
+  tuple; every expression carries typed operands and a replay-derived result.
+- Applied receipts carry the expression route, authored operator body, purpose,
+  consumer, operand roles and spatial positions.
+- The complete canonical text is bounded, hashed with SHA-256 during writing,
+  reopened through the parser, and compared exactly after local replacement.
+- LIGHT TREATMENT expressions and receipts use the same Editor runtime and save
+  through this route.  Ephemeral periodic measurement occurrences do not.
+
+EXPANDED MILESING WORK TARGET
 - File header: magic, format generation, byte order, declared feature flags, root-work reference, and manifest location.
 - Canonical string table: exact UTF-8 Light names, authored text, purposes, units, and source routes.
 - Light catalog relation: exact catalog digest plus the actual names/places used by the work.
 - Conceptual bodies: stable local references, content, properties, exact text/math, authored 2D/3D geometry, time, media relations, and provenance.
 - Relations: exact endpoints, kind, purpose, order/direction when authored, portal request, and return route.
 - Rooted expressions: function reference, ordered operands, chooser evidence, purpose, bounds, result relation, and divinand.
-- Bit associations: carrier occurrence, spatial relation, actual Light relation, operand roles/order, synthetic or exact-grant hardware levels, duration, and expiry.
+- Bit associations: carrier occurrence, spatial relation, actual Light self-number relation, operand roles/order, explicitly measured hardware levels, duration, and completion.
 - Commands: authored intention, prior values needed for reversal, result, and recovery boundary.
 - Recipes: sufficient deterministic cause, non-derivable retained inputs, versions, and comparison method.
 - Resources: deliberately retained local image/media/font/shader bodies with digests and licenses.
 - Evidence: integrity, representation generation, write receipt, reopen result, and local-effect summary.
 
-FORMAT BEHAVIOR
+EXPANDED FORMAT BEHAVIOR TARGET
 - Bounded chunks allow unknown future chunks to be skipped and portrayed safely.
 - Shared authored bodies and cycles use explicit local references rather than repeated copies.
 - Canonical ordering makes equivalent authored work produce the same logical representation.
@@ -24,8 +42,11 @@ FORMAT BEHAVIOR
 - The manifest names every chunk and the root relation needed to reopen the work.
 - Temporary portrayals, decoded pixels, search indexes, layout accelerators, GPU buffers, and derived geometry are regenerated.
 
-CODE HOME
-SUPPORT.txt owns serialization and parsing. APP.txt invokes writing only through an explicit authored command. RENDERER.txt never becomes storage authority.
+CODE ASSOCIATIONS
+SUPPORT.txt is associated with serialization and parsing. APP.txt invokes
+writing only through an explicit authored command. RENDERER.txt is associated
+with disposable portrayal; durable file work is associated with SUPPORT.txt and
+APP.txt.
 
 LIGHT INSIDE WRITING
 - DESIGNING `group` makes one rooted recipe or authored work the complete unit selected for writing.

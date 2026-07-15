@@ -1,5 +1,12 @@
 WINDOWS PRIMITIVES CONCEPT SPACE
 
+STATUS
+This file inventories sufficient Windows openings for the full application.
+An item is live only when the current source invokes it through a verified
+feature.  Encryption, key custody, signature checking, media, UI Automation,
+TSF, OLE drag/drop, custom local browsing and several resource paths remain
+available design routes rather than v0.2 behavior.
+
 PURPOSE
 These are the direct operating-system openings used by the original C++ Light application. Each primitive serves a visible application result and stays beneath authored meaning.
 
@@ -25,8 +32,8 @@ FILES AND PATHS
 - ReplaceFileW: replace a current work with a complete candidate while producing a protected prior copy on the same volume.
 - GetFileInformationByHandleEx: inspect type, size, and local file facts from the opened handle.
 - GetFinalPathNameByHandleW and PathCch: resolve and validate the chosen local route.
-- FindFirstFileExW/FindNextFileW: application-owned local browser with bounded enumeration.
-- GetDriveTypeW: show fixed/removable/RAM/local optical roots while excluding remote roots from the private browser.
+- FindFirstFileExW/FindNextFileW: application-associated local browser with bounded enumeration.
+- GetDriveTypeW: validate the selected workspace root as fixed, removable, RAM, or local optical storage and reject remote roots before any workspace open or save.
 
 INTEGRITY AND PROTECTION
 - BCrypt SHA-256: hash chunks, manifests, candidates, prior bodies, packages, and reopened works.
@@ -39,11 +46,11 @@ PERFORMANCE AND TIME
 - QueryPerformanceCounter: frame, animation, derivation, cancellation, and authored-duration timing.
 - Thread pool or std::jthread: bounded cancellable work.
 - VirtualAlloc or bounded arenas: large transient mathematical/geometry bodies with explicit release.
-- PSAPI/process counters: application-caused work evidence or later exact-grant operands; never automatic ambient collection.
+- PSAPI/process counters: application-caused work evidence or explicitly begun LIGHT TREATMENT operands; launch and workspace open perform no capture.
 
 ACCESSIBILITY AND SHELL BOUNDARY
 - UI Automation provider interfaces: semantic access to the original custom application.
-- Shell file dialogs are not the private intake foundation because the shell namespace can expose remote places; the app-owned browser uses direct local file primitives.
+- Shell file dialogs provide the visible filesystem choice, then the application independently rejects UNC, device, extended-path, unknown-root, and DRIVE_REMOTE results before any workspace open or save; persistence itself uses direct local file primitives.
 - URL launch, HTTP, sockets, telemetry, accounts, update polling, and remote assets have no route in the private body.
 
 MICROSOFT REFERENCE

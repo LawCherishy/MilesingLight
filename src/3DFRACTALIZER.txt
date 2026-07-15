@@ -115,6 +115,7 @@ struct SpatialNode {
     bool selected{};
     bool central{};
     bool main_class{};
+    bool outer_satellite{};
 };
 
 struct SpatialRelation {
@@ -180,7 +181,9 @@ public:
 
         std::vector<WorldNode*> classes;
         for (WorldNode& node : world.nodes) {
-            if (node.parent == center_id) classes.push_back(&node);
+            if (node.parent == center_id && !is_light_treatment(node)) {
+                classes.push_back(&node);
+            }
         }
         if (classes.empty()) return;
 
@@ -190,7 +193,7 @@ public:
         for (WorldNode* branch : classes) {
             class_names.emplace_back(light_catalog[branch->catalog_index].unit);
             for (const WorldNode& candidate : world.nodes) {
-                if (candidate.parent == branch->id) {
+                if (candidate.parent == branch->id && !is_light_treatment(candidate)) {
                     subclass_names.emplace_back(light_catalog[candidate.catalog_index].unit);
                 }
             }
@@ -241,7 +244,7 @@ public:
 
             std::vector<WorldNode*> subclasses;
             for (WorldNode& candidate : world.nodes) {
-                if (candidate.parent == branch.id) {
+                if (candidate.parent == branch.id && !is_light_treatment(candidate)) {
                     subclasses.push_back(&candidate);
                 }
             }
@@ -269,6 +272,7 @@ public:
                 subclasses[sub_index]->extent = 19.0;
             }
         }
+        place_light_treatment(world);
         if (spin_application) last_receipt_ = std::move(spin_application);
         ++world.revision;
     }
@@ -362,7 +366,7 @@ public:
             if (!expanded.contains(screen)) continue;
             frame.nodes.push_back({node.id, node.catalog_index, screen, projected->z, radius,
                                    contains_id(selection, node.id), node.id == center_id,
-                                   node.parent == center_id});
+                                   node.parent == center_id, is_light_treatment(node)});
         }
         std::stable_sort(frame.nodes.begin(), frame.nodes.end(),
                          [](const SpatialNode& a, const SpatialNode& b) {
@@ -429,6 +433,28 @@ private:
     mutable bool fractal_cache_ready_{};
     mutable Point2List cached_fractal_shape_{};
     static constexpr std::size_t maximum_pending_receipts_{1024};
+
+    static bool is_light_treatment(const WorldNode& node) {
+        return node.catalog_index < light_catalog.size() &&
+               light_catalog[node.catalog_index].self_number == "LIGHT TREATMENT";
+    }
+
+    void place_light_treatment(AuthoredWorld& world) {
+        WorldNode* treatment = world.find_unit("LIGHT TREATMENT");
+        WorldNode* reality = world.find_unit("REALITY");
+        if (!treatment || !reality || !is_light_treatment(*treatment)) return;
+
+        const double angle = reality->rotation;
+        const Vec3 outward = invoke_rotate_xy(
+            world, treatment->id, {255.0, 0.0, 235.0}, angle,
+            "LIGHT TREATMENT outer placement associated with REALITY");
+
+        // Only portrayal coordinates change here. The authored REALITY
+        // association, relation, route, and authored order remain untouched.
+        treatment->spatial = reality->spatial + outward;
+        treatment->rotation = angle + pi * 0.25;
+        treatment->extent = 34.0;
+    }
 
     void record_receipt(AppliedOperation application) const {
         if (pending_receipts_.size() >= maximum_pending_receipts_) {

@@ -1,21 +1,30 @@
 REPLACEMENT CONCEPT SPACE
 
+STATUS
+The live version-2 path writes and verifies one complete canonical text body.
+Chunk/resource manifests, concurrent revision freezing, advance space planning
+and exact-artifact cleanup preview remain expansion work.
+
 PURPOSE
 A save commits one complete authored work while preserving a known complete prior body.
 
-DIRECT SAVE FLOW
-1. Freeze one authored revision reference while editing may continue into a later revision.
-2. Calculate the exact candidate size and confirm room for current work, candidate, protected prior body, and evidence.
-3. Create a uniquely named candidate beside the destination on the same local volume.
-4. Write header, chunks, resources, and manifest with exact byte counts.
-5. Flush the candidate handle.
-6. Close and reopen the candidate through the bounded parser.
-7. Verify hashes and compare the complete logical root.
-8. If no current work exists, move the verified candidate to the final path and reopen it.
-9. If a current work exists, call ReplaceFileW with an explicit protected-prior path.
-10. Handle every documented ReplaceFileW outcome by inventorying the final, candidate, and prior paths before offering another action.
-11. Reopen the final path, verify it, and retain the write receipt.
-12. Release obsolete candidates only through an explicit exact-artifact preview.
+LIVE DIRECT SAVE FLOW
+1. Form one canonical version-2 body from the current authored world, shared
+   Editor runtime, applied receipts and attention.
+2. Parse and replay that complete body before writing any bytes.
+3. Create a uniquely named candidate beside the destination.
+4. Write exact bytes and call FlushFileBuffers.
+5. Reopen the candidate; compare exact bytes, SHA-256 and semantic replay.
+6. If no destination exists, move the candidate to the final path.  Otherwise
+   call ReplaceFileW with an explicit protected-prior path.
+7. Reopen the final path; compare exact bytes, SHA-256 and semantic replay again.
+8. Return the final/candidate/prior paths, byte extent, SHA-256 and reopen facts;
+   then prune only verified old canonical priors within bounded inspection.
+
+EXPANDED SAVE TARGET
+Add deliberate free-space planning, a frozen revision while concurrent editing
+continues, chunk/resource manifests, richer outcome inventory and visible
+artifact cleanup decisions without weakening the live exact-body chain.
 
 MICROSOFT REFERENCE
 https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-replacefilew

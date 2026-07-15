@@ -3,8 +3,8 @@
 
 namespace milesing {
 
-// The planar language never owns a second copy of the work.  It calculates a
-// portrayal of AuthoredWorld and writes intentional coordinate changes back to
+// The planar language stays directly associated with AuthoredWorld. It
+// calculates a portrayal and writes intentional coordinate changes back to
 // that same world.
 struct RectD {
     double x{};
@@ -74,6 +74,7 @@ struct PlanarNode {
     bool selected{};
     bool central{};
     bool main_class{};
+    bool outer_satellite{};
 };
 
 struct PlanarRelation {
@@ -153,7 +154,9 @@ public:
 
         std::vector<WorldNode*> classes;
         for (WorldNode& node : world.nodes) {
-            if (node.parent == center_id) classes.push_back(&node);
+            if (node.parent == center_id && !is_light_treatment(node)) {
+                classes.push_back(&node);
+            }
         }
         if (classes.empty()) return;
 
@@ -163,7 +166,7 @@ public:
         for (const WorldNode* node : classes) {
             class_names.emplace_back(light_catalog[node->catalog_index].unit);
             for (const WorldNode& candidate : world.nodes) {
-                if (candidate.parent == node->id) {
+                if (candidate.parent == node->id && !is_light_treatment(candidate)) {
                     subclass_names.emplace_back(light_catalog[candidate.catalog_index].unit);
                 }
             }
@@ -208,7 +211,9 @@ public:
 
             std::vector<WorldNode*> subclasses;
             for (WorldNode& candidate : world.nodes) {
-                if (candidate.parent == branch.id) subclasses.push_back(&candidate);
+                if (candidate.parent == branch.id && !is_light_treatment(candidate)) {
+                    subclasses.push_back(&candidate);
+                }
             }
             std::stable_sort(subclasses.begin(), subclasses.end(), [&](const WorldNode* left,
                                                                        const WorldNode* right) {
@@ -232,6 +237,7 @@ public:
                 subclasses[sub_index]->extent = 20.0;
             }
         }
+        place_light_treatment(world);
         if (spin_application) last_receipt_ = std::move(spin_application);
         ++world.revision;
     }
@@ -242,6 +248,7 @@ public:
         for (std::size_t id : world.authored_order) {
             WorldNode* node = world.find(id);
             if (!node) continue;
+            if (is_light_treatment(*node)) continue;
             if (id == center_id) {
                 node->planar = {};
                 node->extent = 43.0;
@@ -251,6 +258,7 @@ public:
             node->planar = invoke_log_spiral(world, node->id, 24.0, 0.021, theta);
             node->extent = node->parent == center_id ? 29.0 : 19.0;
         }
+        place_light_treatment(world);
         ++world.revision;
     }
 
@@ -332,7 +340,8 @@ public:
             const bool is_selected = contains_id(selection, node.id);
             const bool is_class = node.parent == center_id;
             frame.nodes.push_back({node.id, node.catalog_index, screen, radius, detail_for(radius),
-                                   is_selected, node.id == center_id, is_class});
+                                   is_selected, node.id == center_id, is_class,
+                                   is_light_treatment(node)});
         }
         // The operator assigned to actual SIZE measures this finite visible set.
         frame.visible_cardinality = invoke_cardinality(world, frame.nodes);
@@ -412,6 +421,35 @@ private:
     mutable Point2List cached_fractal_shape_{};
     static constexpr std::size_t maximum_pending_receipts_{1024};
 
+    static bool is_light_treatment(const WorldNode& node) {
+        return node.catalog_index < light_catalog.size() &&
+               light_catalog[node.catalog_index].self_number == "LIGHT TREATMENT";
+    }
+
+    void place_light_treatment(AuthoredWorld& world) {
+        WorldNode* treatment = world.find_unit("LIGHT TREATMENT");
+        WorldNode* reality = world.find_unit("REALITY");
+        const WorldNode* center = world.find(central_node(world));
+        if (!treatment || !reality || !center || !is_light_treatment(*treatment)) return;
+
+        const Vec2 from_center = reality->planar - center->planar;
+        const double distance = length(from_center);
+        const double angle = distance > 1.0e-12
+            ? std::atan2(from_center.y, from_center.x)
+            : reality->rotation;
+        const std::array<double, 5> rotation = invoke_givens(
+            world, treatment->id, std::cos(angle), -std::sin(angle));
+        constexpr double outward_distance = 185.0;
+        const Vec2 outward{rotation[0] * outward_distance,
+                           rotation[2] * outward_distance};
+
+        // Only portrayal coordinates change here. The authored REALITY
+        // association, relation, route, and authored order remain untouched.
+        treatment->planar = reality->planar + outward;
+        treatment->rotation = angle + pi * 0.25;
+        treatment->extent = 34.0;
+    }
+
     void record_receipt(AppliedOperation application) const {
         if (pending_receipts_.size() >= maximum_pending_receipts_) {
             pending_receipts_.erase(pending_receipts_.begin());
@@ -469,7 +507,7 @@ private:
             return invocation;
         } catch (const std::exception&) {
             // A valid symbolic/exact runtime call is always attempted first.
-            // Ordinary geometry remains readable if a later domain contract is
+            // Ordinary geometry remains readable if a later operand domain is
             // deliberately tightened during evolution.
             return std::nullopt;
         }

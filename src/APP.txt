@@ -83,11 +83,68 @@
 
 namespace milesing {
 
+inline bool workspace_path_is_on_local_volume(
+    const std::filesystem::path& candidate) noexcept {
+    try {
+        if (candidate.empty()) return false;
+        const std::filesystem::path absolute =
+            std::filesystem::absolute(candidate).lexically_normal();
+        const std::wstring native = absolute.native();
+        // UNC, extended UNC, device, and extended-path spellings all begin
+        // with two separators.  Keep workspace persistence on a directly
+        // attached local volume instead of asking a network redirector to
+        // interpret any of them.
+        if (native.size() >= 2 &&
+            (native[0] == L'\\' || native[0] == L'/') &&
+            (native[1] == L'\\' || native[1] == L'/')) {
+            return false;
+        }
+        const std::wstring root = absolute.root_path().native();
+        if (root.empty()) return false;
+        switch (GetDriveTypeW(root.c_str())) {
+        case DRIVE_REMOVABLE:
+        case DRIVE_FIXED:
+        case DRIVE_CDROM:
+        case DRIVE_RAMDISK:
+            break;
+        default:
+            return false;
+        }
+        // A fixed drive spelling can still cross a junction, mount point, or
+        // symbolic link into a different storage boundary. Walk only the
+        // existing prefix, rejecting the first reparse point before traversal.
+        // A missing final filename (or missing suffix) remains admissible once
+        // every existing parent component has been proved direct and local.
+        std::filesystem::path admitted = absolute.root_path();
+        for (const auto& component : absolute.relative_path()) {
+            admitted /= component;
+            const DWORD attributes = GetFileAttributesW(admitted.c_str());
+            if (attributes == INVALID_FILE_ATTRIBUTES) {
+                const DWORD error = GetLastError();
+                if (error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND) break;
+                return false;
+            }
+            if ((attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0) return false;
+        }
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
+inline SpatialSystemAssociation ready_light_treatment_association() {
+    SpatialSystemAssociation ready{};
+    ready.purpose =
+        "LIGHT TREATMENT ready for an explicitly begun finite measure window";
+    ready.divinand =
+        "MY LIGHT remains associated with the authored whole while machine measurement is dormant";
+    return ready;
+}
+
 class NativeApplication final {
 public:
     NativeApplication()
-        : system_association_(SystemParticipation::synthetic_fixture(
-              editor_.world(), system_runtime_, Vec3{0.0, 0.0, 0.0})) {}
+        : system_association_(ready_light_treatment_association()) {}
 
     NativeApplication(const NativeApplication&) = delete;
     NativeApplication& operator=(const NativeApplication&) = delete;
@@ -128,7 +185,8 @@ public:
     }
 
 private:
-    static LRESULT CALLBACK window_entry(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
+    static LRESULT CALLBACK window_entry(HWND window, UINT message,
+                                         WPARAM wparam, LPARAM lparam) noexcept {
         NativeApplication* self = reinterpret_cast<NativeApplication*>(
             GetWindowLongPtrW(window, GWLP_USERDATA));
         if (message == WM_NCCREATE) {
@@ -137,8 +195,37 @@ private:
             self->window_ = window;
             SetWindowLongPtrW(window, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(self));
         }
-        return self ? self->window_proc(message, wparam, lparam)
-                    : DefWindowProcW(window, message, wparam, lparam);
+        try {
+            return self ? self->window_proc(message, wparam, lparam)
+                        : DefWindowProcW(window, message, wparam, lparam);
+        } catch (const std::exception& failure) {
+            if (self) self->hold_window_callback_failure(message, failure.what());
+        } catch (...) {
+            if (self) self->hold_window_callback_failure(
+                message, "an unknown C++ failure reached the native callback boundary");
+        }
+        if (message == WM_NCCREATE) return FALSE;
+        if (message == WM_CREATE) return -1;
+        return 0;
+    }
+
+    void hold_window_callback_failure(UINT message, std::string_view detail) noexcept {
+        // Win32 callbacks never receive a C++ exception. An active measurement
+        // is closed first so no further raw occurrences or timer work remain.
+        if (!system_participation_.dormant()) {
+            system_participation_.close_measure_window();
+        }
+        try {
+            last_error_ = "native message " + std::to_string(message) +
+                " was held inside the application: " + std::string(detail);
+            persistence_status_ =
+                "LIGHT TREATMENT stopped safely at the native callback boundary";
+        } catch (...) {
+            // Preserve the noexcept callback boundary even if diagnostic text
+            // cannot allocate. Timer and frame recovery below still complete.
+        }
+        try { update_animation_timer(); } catch (...) {}
+        try { mark_frame_changed(false); } catch (...) {}
     }
 
     LRESULT window_proc(UINT message, WPARAM wparam, LPARAM lparam) {
@@ -195,6 +282,10 @@ private:
         case WM_TIMER:
             on_timer();
             return 0;
+        case WM_SETTINGCHANGE:
+            renderer_.visual_preferences_changed();
+            mark_frame_changed();
+            return 0;
         case WM_DISPLAYCHANGE:
             mark_frame_changed();
             return 0;
@@ -221,7 +312,7 @@ private:
         last_tick_ = std::chrono::steady_clock::now();
         update_selection_cardinality(true);
         dirty_ = false;
-        persistence_status_ = "Ctrl+O open · Ctrl+S save · Ctrl+Shift+S save as · explicit local files only";
+        persistence_status_ = "Ctrl+O open · Ctrl+S save · F6 LIGHT TREATMENT · Q quick / D deep / Enter complete / Esc revoke";
         update_window_title();
         update_animation_timer();
         return true;
@@ -269,6 +360,7 @@ private:
     }
 
     void render_frame() {
+        const std::int64_t frame_began = system_measure_detail::qpc_now();
         if (renderer_.occluded()) {
             if (renderer_.test_visible()) InvalidateRect(window_, nullptr, FALSE);
             return;
@@ -305,14 +397,16 @@ private:
             }
             case Workspace::Operations:
                 renderer_.draw_operations(viewport, editor_.active_operation_draft(),
+                                          editor_.operation_binding_sheet_open(),
+                                          editor_.operation_binding_scroll(),
                                           editor_.applied_operations().size(),
                                           editor_.discarded_applied_operations());
                 break;
             case Workspace::TimeMedia:
                 renderer_.draw_time_media(viewport, editor_.runtime(), timeline_phase());
                 break;
-            case Workspace::SystemRelation:
-                renderer_.draw_system_relation(viewport, system_association_);
+            case Workspace::LightTreatment:
+                renderer_.draw_light_treatment(viewport, system_association_);
                 break;
             }
 
@@ -322,10 +416,19 @@ private:
                                  static_cast<std::size_t>(editor_.workspace()), workspace, status,
                                  editor_.runtime(), system_association_, resize_change_, timeline_phase());
             const FrameCompletion completion = renderer_.end_frame();
+            const std::int64_t frame_ended = system_measure_detail::qpc_now();
+            last_frame_ticks_ = frame_ended >= frame_began
+                ? static_cast<std::uint64_t>(frame_ended - frame_began) : 0;
+            last_frame_frequency_ = system_measure_detail::qpc_frequency();
+            last_frame_completion_ = completion;
+            ++presented_frame_count_;
             if (completion == FrameCompletion::Failed) {
                 throw std::runtime_error("the native graphics frame could not complete");
             }
-            if (completion == FrameCompletion::Recovered) mark_frame_changed();
+            if (completion == FrameCompletion::Recovered) {
+                ++recovered_frame_count_;
+                mark_frame_changed();
+            }
         } catch (...) {
             renderer_.abort_frame();
             throw;
@@ -335,6 +438,13 @@ private:
     void on_pointer_down(PointerButton button, LPARAM lparam) {
         const Vec2 point = pointer_from_client(lparam);
         const RectD client = client_bounds();
+        if (editor_.workspace() == Workspace::Operations &&
+            editor_.operation_binding_sheet_open()) {
+            if (editor_.pointer_down(point, button, pointer_modifiers(), client)) {
+                mark_frame_changed(false);
+            }
+            return;
+        }
         const AuthoredSignal before = authored_signal();
         begin_command("pointer attention", "route one direct pointer intention through the shared editor command body");
 
@@ -375,6 +485,13 @@ private:
         const Vec2 point{screen.x * factor, screen.y * factor};
         const double steps = static_cast<double>(GET_WHEEL_DELTA_WPARAM(wparam)) /
                              static_cast<double>(WHEEL_DELTA);
+        if (editor_.workspace() == Workspace::Operations &&
+            editor_.operation_binding_sheet_open()) {
+            if (editor_.pointer_wheel(point, steps, client_bounds())) {
+                mark_frame_changed(false);
+            }
+            return;
+        }
         const AuthoredSignal before = authored_signal();
         begin_command("camera wheel", "apply one finite pointer-wheel movement to the active authored camera");
         if (editor_.pointer_wheel(point, steps, client_bounds())) {
@@ -388,6 +505,19 @@ private:
             on_close();
             return;
         }
+        const bool binding_interaction =
+            editor_.workspace() == Workspace::Operations &&
+            (editor_.operation_binding_sheet_open() ||
+             (key == 'B' && !key_down(VK_CONTROL) && !key_down(VK_MENU)));
+        if (binding_interaction) {
+            if (editor_.key_down(key, key_down(VK_CONTROL), key_down(VK_SHIFT),
+                                 key_down(VK_MENU), client_bounds())) {
+                mark_frame_changed(false);
+                update_selection_cardinality(false);
+            }
+            update_animation_timer();
+            return;
+        }
         if (key == 'S' && key_down(VK_CONTROL) && !key_down(VK_MENU)) {
             if ((static_cast<std::uint64_t>(key_information) & (std::uint64_t{1} << 30)) != 0) return;
             const bool save_as = key_down(VK_SHIFT) || workspace_path_.empty();
@@ -398,6 +528,32 @@ private:
             if ((static_cast<std::uint64_t>(key_information) & (std::uint64_t{1} << 30)) != 0) return;
             (void)open_workspace();
             return;
+        }
+        if (editor_.workspace() == Workspace::LightTreatment &&
+            !key_down(VK_CONTROL) && !key_down(VK_MENU)) {
+            if (key == 'Q') {
+                begin_light_treatment_window(std::chrono::seconds{60},
+                                             "quick 60-second whole-self derivation");
+                return;
+            }
+            if (key == 'D') {
+                begin_light_treatment_window(std::chrono::hours{1},
+                                             "deep one-hour whole-self derivation");
+                return;
+            }
+            if (key == VK_RETURN) {
+                if (system_participation_.dormant()) {
+                    begin_light_treatment_window(std::chrono::seconds{60},
+                                                 "quick 60-second whole-self derivation");
+                } else {
+                    complete_light_treatment_window();
+                }
+                return;
+            }
+            if (key == VK_ESCAPE && !system_participation_.dormant()) {
+                revoke_light_treatment_window();
+                return;
+            }
         }
         const AuthoredSignal before = authored_signal();
         begin_command("key " + std::to_string(key),
@@ -415,8 +571,141 @@ private:
         const auto now = std::chrono::steady_clock::now();
         const double seconds = std::chrono::duration<double>(now - last_tick_).count();
         last_tick_ = now;
+        advance_light_treatment_window();
         editor_.tick((std::min)(seconds, 0.1));
         mark_frame_changed(false);
+    }
+
+    void begin_light_treatment_window(std::chrono::milliseconds duration,
+                                      std::string name) {
+        if (!system_participation_.dormant()) {
+            system_participation_.close_measure_window();
+        }
+        MeasureWholeRequest request{
+            "Milesing application + authored graph whole + explicitly admitted local machine + current Milesing process + explicit active workspace file",
+            std::move(name),
+            "exact typed measured-whole views",
+            std::chrono::seconds{1},
+            duration,
+            std::chrono::milliseconds{0},
+            "measured wholes -> Light operations -> LIGHT TREATMENT whole",
+            "measured whole-self operand",
+            true
+        };
+        if (!system_participation_.begin_measure_window(std::move(request))) {
+            last_error_ = "LIGHT TREATMENT could not begin its exact finite measure window";
+            return;
+        }
+        last_error_.clear();
+        persistence_status_ = duration >= std::chrono::hours{1}
+            ? "LIGHT TREATMENT deep window live · measured once per second or slower when observed cost requires"
+            : "LIGHT TREATMENT quick window live · measured once per second or slower when observed cost requires";
+        update_animation_timer();
+        mark_frame_changed(false);
+    }
+
+    void admit_last_frame_whole() {
+        if (system_participation_.dormant()) return;
+        const D2D1_SIZE_F size = renderer_.logical_size();
+        const double completion = last_frame_completion_ == FrameCompletion::Presented ? 0.0
+            : last_frame_completion_ == FrameCompletion::Recovered ? 1.0 : 2.0;
+        AppMeasureSample frame = system_measure_detail::make_whole(
+            "LIGHT TREATMENT / native frame whole", MeasureSource::application,
+            "last completed native frame",
+            "ordered tuple [QPC ticks,QPC frequency,width,height,DPI,outcome,presented,recovered]",
+            Operand::numbers({
+                static_cast<double>(last_frame_ticks_),
+                static_cast<double>(last_frame_frequency_),
+                static_cast<double>(size.width),
+                static_cast<double>(size.height),
+                static_cast<double>(dpi_), completion,
+                static_cast<double>(presented_frame_count_),
+                static_cast<double>(recovered_frame_count_)}),
+            std::chrono::milliseconds{0}, frame_cause_,
+            "Renderer begin/end frame measured by QueryPerformanceCounter; logical surface and DPI read directly from the live native application");
+        (void)system_participation_.admit_measure_whole(std::move(frame));
+    }
+
+    void advance_light_treatment_window() {
+        if (system_participation_.dormant()) return;
+        const auto progress = system_participation_.advance_measure_window(
+            editor_.world(), editor_.runtime(), workspace_path_);
+        if (progress == SystemParticipation::Advance::measured) {
+            admit_last_frame_whole();
+            persistence_status_ = "LIGHT TREATMENT live · exact app/workspace/machine/file/process wholes · adaptive measured-cost cadence";
+        }
+        if (progress != SystemParticipation::Advance::completed) return;
+        if (auto completed = system_participation_.take_completed_association()) {
+            std::ostringstream status;
+            status << "LIGHT TREATMENT complete for declared measured domain · MY LIGHT DivinandWhole rooted";
+            if (!completed->window_evidence.empty()) {
+                const auto& evidence = completed->window_evidence.back();
+                status << " · occurrences " << evidence.acquired_occurrences
+                       << " · missed " << evidence.missed_occurrences
+                       << " · acquisition ticks " << evidence.acquisition_ticks
+                       << " · acquired bytes " << evidence.acquired_encoded_bytes
+                       << " · latest-family bytes " << evidence.retained_encoded_bytes;
+                if (evidence.retained_encoded_bytes != 0) {
+                    status << " · temporal reduction " << std::fixed
+                           << std::setprecision(2)
+                           << static_cast<long double>(evidence.acquired_encoded_bytes) /
+                              static_cast<long double>(evidence.retained_encoded_bytes)
+                           << "x";
+                }
+            }
+            associate_completed_light_treatment(std::move(*completed), status.str());
+        }
+        system_participation_.close_measure_window();
+        update_animation_timer();
+        mark_frame_changed();
+    }
+
+    void complete_light_treatment_window() {
+        if (system_participation_.dormant()) return;
+        admit_last_frame_whole();
+        system_participation_.complete_measure_window(
+            editor_.world(), editor_.runtime(), workspace_path_);
+        if (auto completed = system_participation_.take_completed_association()) {
+            associate_completed_light_treatment(
+                std::move(*completed),
+                "LIGHT TREATMENT completed now for the exactly measured finite window · MY LIGHT DivinandWhole rooted through its measured unary route");
+        }
+        system_participation_.close_measure_window();
+        update_animation_timer();
+        mark_frame_changed();
+    }
+
+    void revoke_light_treatment_window() {
+        system_participation_.close_measure_window();
+        persistence_status_ = "LIGHT TREATMENT measure window revoked · ephemeral raw occurrences released";
+        update_animation_timer();
+        mark_frame_changed(false);
+    }
+
+    bool associate_completed_light_treatment(SpatialSystemAssociation completed,
+                                             std::string completion_status) {
+        // The completed operations were calculated directly in editor_.runtime().
+        // Associate their receipts with that same authored workspace before the
+        // completed measurement portrayal replaces the live UI association.
+        std::string association_error;
+        const bool associated = editor_.associate_applied_operations(
+            completed.applied_operations, association_error);
+        system_association_ = std::move(completed);
+        if (!associated) {
+            last_error_ =
+                "LIGHT TREATMENT completed, but its authored-workspace association was held: " +
+                association_error;
+            persistence_status_ = std::move(completion_status) +
+                " | portrayal retained | workspace association held: " + association_error;
+            return false;
+        }
+
+        dirty_ = true;
+        update_window_title();
+        last_error_.clear();
+        persistence_status_ = std::move(completion_status) +
+            " | exact expressions and applied receipts associated for normal workspace save";
+        return true;
     }
 
     void begin_command(std::string action, std::string purpose) {
@@ -498,7 +787,7 @@ private:
 
         result = dialog->Show(window_);
         if (result == HRESULT_FROM_WIN32(ERROR_CANCELLED)) return std::nullopt;
-        if (FAILED(result)) throw std::runtime_error("the native Save As dialog did not return a local path");
+        if (FAILED(result)) throw std::runtime_error("the native Save As dialog did not return a filesystem selection");
 
         Microsoft::WRL::ComPtr<IShellItem> item;
         if (FAILED(dialog->GetResult(&item))) {
@@ -515,6 +804,10 @@ private:
         } catch (...) {
             CoTaskMemFree(raw_path);
             throw;
+        }
+        if (!workspace_path_is_on_local_volume(chosen)) {
+            throw std::runtime_error(
+                "MilesingLight workspaces remain on a directly attached local volume; remote and UNC save paths are held");
         }
         return chosen;
     }
@@ -545,7 +838,7 @@ private:
 
         result = dialog->Show(window_);
         if (result == HRESULT_FROM_WIN32(ERROR_CANCELLED)) return std::nullopt;
-        if (FAILED(result)) throw std::runtime_error("the native Open dialog did not return a local path");
+        if (FAILED(result)) throw std::runtime_error("the native Open dialog did not return a filesystem selection");
 
         Microsoft::WRL::ComPtr<IShellItem> item;
         if (FAILED(dialog->GetResult(&item))) {
@@ -562,6 +855,10 @@ private:
         } catch (...) {
             CoTaskMemFree(raw_path);
             throw;
+        }
+        if (!workspace_path_is_on_local_volume(chosen)) {
+            throw std::runtime_error(
+                "MilesingLight workspaces remain on a directly attached local volume; remote and UNC open paths are held");
         }
         return chosen;
     }
@@ -615,10 +912,8 @@ private:
             std::wstring replacement_title = L"Milesing · My Light — " +
                 replacement_path.filename().wstring();
 
-            LightRuntime replacement_system_runtime{16};
             SpatialSystemAssociation replacement_system_association =
-                SystemParticipation::synthetic_fixture(
-                    parsed.workspace->world, replacement_system_runtime, Vec3{0.0, 0.0, 0.0});
+                ready_light_treatment_association();
 
             NameList selected_names;
             selected_names.reserve(parsed.workspace->attention.size());
@@ -628,7 +923,7 @@ private:
                 if (!node || node->catalog_index >= light_catalog.size()) {
                     throw std::logic_error("validated attention lost its authored Light body route");
                 }
-                selected_names.emplace_back(light_catalog[node->catalog_index].unit);
+                selected_names.emplace_back(light_catalog[node->catalog_index].self_number);
                 replacement_selection_signature ^= static_cast<std::uint64_t>(id);
                 replacement_selection_signature *= 1099511628211ull;
             }
@@ -658,7 +953,7 @@ private:
             static_assert(std::is_nothrow_move_assignable_v<SpatialSystemAssociation>);
             static_assert(std::is_nothrow_move_assignable_v<std::filesystem::path>);
             static_assert(std::is_nothrow_move_assignable_v<std::string>);
-            system_runtime_ = std::move(replacement_system_runtime);
+            system_participation_.close_measure_window();
             system_association_ = std::move(replacement_system_association);
             command_runtime_.clear();
             resize_runtime_.clear();
@@ -745,7 +1040,18 @@ private:
                     return SaveResult::Cancelled;
                 }
                 target = *chosen;
-            } else if (!allow_changed_target(target)) {
+            }
+            // Last pathname admission before any target inspection. This proves
+            // the components observed now; Windows can still race a remap after
+            // the check. Eliminating that residual requires a handle-relative,
+            // no-follow writer rather than the present recoverable path writer.
+            if (!workspace_path_is_on_local_volume(target)) {
+                persistence_status_ =
+                    "save held — final target is not on a directly attached local volume";
+                mark_frame_changed(false);
+                return SaveResult::Cancelled;
+            }
+            if (!allow_changed_target(target)) {
                 persistence_status_ = "save held — changed local target left untouched";
                 mark_frame_changed(false);
                 return SaveResult::Cancelled;
@@ -842,7 +1148,7 @@ private:
         for (const std::size_t id : editor_.selection()) {
             if (const WorldNode* node = editor_.world().find(id);
                 node && node->catalog_index < light_catalog.size()) {
-                selected_names.emplace_back(light_catalog[node->catalog_index].unit);
+                selected_names.emplace_back(light_catalog[node->catalog_index].self_number);
             }
         }
         selection_runtime_.clear();
@@ -864,7 +1170,7 @@ private:
         names.reserve(editor_.world().nodes.size());
         for (const WorldNode& node : editor_.world().nodes) {
             if (node.visible && node.catalog_index < light_catalog.size()) {
-                names.emplace_back(light_catalog[node.catalog_index].unit);
+                names.emplace_back(light_catalog[node.catalog_index].self_number);
             }
         }
         return names;
@@ -930,10 +1236,13 @@ private:
 
     void update_animation_timer() {
         const bool animate = editor_.playing();
-        if (animate == animation_active_) return;
+        const bool measure = !system_participation_.dormant();
+        const UINT desired_period = animate ? 33u : measure ? 100u : 0u;
+        if (timer_period_ == desired_period) return;
+        KillTimer(window_, animation_timer);
+        timer_period_ = desired_period;
         animation_active_ = animate;
-        if (animation_active_) SetTimer(window_, animation_timer, 33, nullptr);
-        else KillTimer(window_, animation_timer);
+        if (timer_period_ != 0) SetTimer(window_, animation_timer, timer_period_, nullptr);
     }
 
     void mark_frame_changed(bool invalidate_plan = true) {
@@ -954,7 +1263,6 @@ private:
     LightRuntime command_runtime_{8};
     LightRuntime resize_runtime_{4};
     LightRuntime selection_runtime_{4};
-    LightRuntime system_runtime_{16};
     SystemParticipation system_participation_{};
     SpatialSystemAssociation system_association_{};
     Renderer renderer_{};
@@ -963,6 +1271,11 @@ private:
     std::size_t selection_count_{};
     std::uint64_t selection_signature_{(std::numeric_limits<std::uint64_t>::max)()};
     std::uint64_t frame_cause_{1};
+    std::uint64_t last_frame_ticks_{};
+    std::uint64_t last_frame_frequency_{1};
+    std::uint64_t presented_frame_count_{};
+    std::uint64_t recovered_frame_count_{};
+    FrameCompletion last_frame_completion_{FrameCompletion::Presented};
     std::optional<AppliedOperation> resize_application_{};
     std::optional<AppliedOperation> selection_application_{};
     std::optional<AppliedOperation> command_application_{};
@@ -973,25 +1286,621 @@ private:
     std::string last_error_{};
     bool dirty_{};
     bool animation_active_{};
+    UINT timer_period_{};
     std::chrono::steady_clock::time_point last_tick_{};
 };
 
 } // namespace milesing
 
 #if defined(MILESING_OPERATOR_SELF_TEST)
+namespace {
+
+struct LegacyV1SelfTestExpression {
+    std::size_t catalog_index{};
+    std::vector<milesing::OperandDesignation> operands{};
+    std::optional<milesing::Operand> result{};
+};
+
+std::vector<milesing::OperandDesignation> legacy_v1_test_designations(
+    std::initializer_list<std::pair<std::string_view, milesing::Operand>> values) {
+    std::vector<milesing::OperandDesignation> result;
+    result.reserve(values.size());
+    std::size_t index{};
+    for (const auto& [role, value] : values) {
+        result.push_back({index++, value, std::string(role), std::nullopt, std::nullopt});
+    }
+    return result;
+}
+
+std::string legacy_v1_test_code(std::size_t catalog_index) {
+    return catalog_index == 6 ? "logical_not"
+                              : std::string(milesing::light_catalog[catalog_index].code);
+}
+
+std::string legacy_v1_test_origin(std::size_t catalog_index) {
+    const auto& definition = milesing::light_catalog[catalog_index];
+    const std::string code = legacy_v1_test_code(catalog_index);
+    std::vector<std::string> candidates{std::string(definition.origin)};
+    std::string lowercase(definition.origin);
+    if (!lowercase.empty() && lowercase.front() >= 'A' && lowercase.front() <= 'Z') {
+        lowercase.front() = static_cast<char>(lowercase.front() - 'A' + 'a');
+        candidates.push_back(std::move(lowercase));
+    }
+    static constexpr std::array<std::string_view, 7> historical_origins{
+        "intuitionistic propositional logic",
+        "Riemann-sphere arithmetic",
+        "reproducing-kernel functional analysis",
+        "BEDMAS arithmetic",
+        "Morse theory",
+        "cardinal arithmetic",
+        "nominal-set theory"};
+    for (const auto candidate : historical_origins) {
+        candidates.emplace_back(candidate);
+    }
+    for (const auto& candidate : candidates) {
+        if (milesing::exact_legacy_v1_node_tuple(
+                catalog_index, definition.self_number, code, candidate)) {
+            return candidate;
+        }
+    }
+    throw std::runtime_error(
+        "self-contained version-1 fixture could not form an exact historical node tuple");
+}
+
+milesing::Operand legacy_v1_test_divinand() {
+    milesing::DivinandValue value;
+    value.catalog_extent = milesing::light_catalog.size() - 1;
+    value.units.reserve(value.catalog_extent);
+    value.assigned_operators.reserve(value.catalog_extent);
+    for (std::size_t i = 0; i < value.catalog_extent; ++i) {
+        value.units.emplace_back(milesing::light_catalog[i].self_number);
+        value.assigned_operators.push_back(legacy_v1_test_code(i));
+    }
+    return milesing::Operand::divinand(std::move(value));
+}
+
+std::vector<LegacyV1SelfTestExpression> legacy_v1_self_test_expressions() {
+    const milesing::Operand trust_left = milesing::Operand::probability(
+        milesing::ProbabilityValue{{"a", "a|b"}, {0.7, 0.3}});
+    const milesing::Operand trust_right = milesing::Operand::probability(
+        milesing::ProbabilityValue{{"a", "b"}, {0.6, 0.4}});
+    milesing::LightRuntime trust_runtime(1);
+    const milesing::Invocation trust = trust_runtime.invoke(
+        "dempster_combine",
+        {milesing::Operand::names({"a", "b"}), trust_left, trust_right});
+    if (!trust.value) {
+        throw std::runtime_error(
+            "self-contained version-1 TRUST fixture did not form a finite historical result");
+    }
+
+    std::vector<LegacyV1SelfTestExpression> result;
+    result.reserve(9);
+    result.push_back({0, {}, legacy_v1_test_divinand()});
+    result.push_back({4, {}, milesing::Operand{}});
+    result.push_back({6, legacy_v1_test_designations({
+        {"truth", milesing::Operand::truth(true)}}),
+        milesing::Operand::truth(false)});
+    result.push_back({54, legacy_v1_test_designations({
+        {"monotone map", milesing::Operand::numbers({0, 1, 1, 3})},
+        {"target", milesing::Operand::number(1)}}),
+        milesing::Operand::integer(2)});
+    result.push_back({61, legacy_v1_test_designations({
+        {"vertex values", milesing::Operand::numbers({1, 4, 9})}}),
+        milesing::Operand::numbers({3, 5})});
+    result.push_back({76, legacy_v1_test_designations({
+        {"evidence one", trust_left}, {"evidence two", trust_right}}),
+        *trust.value});
+    result.push_back({77, legacy_v1_test_designations({
+        {"samples", milesing::Operand::numbers({1, 3, 2, 4, 1})}}),
+        milesing::Operand::numbers({1, 3})});
+    result.push_back({98, legacy_v1_test_designations({
+        {"transports", milesing::Operand::matrix({2, 4, {
+            0, -1, 1, 0, 0, -1, 1, 0}})}}),
+        milesing::Operand::matrix({2, 2, {-1, -0.0, 0, -1}})});
+    result.push_back({1, legacy_v1_test_designations({
+        {"left", milesing::Operand::number(6)},
+        {"right", milesing::Operand::number(2)}}),
+        milesing::Operand::number(4)});
+    return result;
+}
+
+std::string legacy_v1_self_test_body(
+    std::span<const LegacyV1SelfTestExpression> expressions) {
+    milesing::AuthoredWorld world = milesing::AuthoredWorld::from_light();
+    const std::size_t historical_extent = milesing::light_catalog.size() - 1;
+    world.nodes.resize(historical_extent);
+    std::erase_if(world.relations, [&](const milesing::WorldRelation& relation) {
+        return relation.source >= historical_extent || relation.target >= historical_extent;
+    });
+    std::erase_if(world.authored_order, [&](std::size_t id) {
+        return id >= historical_extent;
+    });
+    const milesing::LightRuntime empty_runtime;
+    const std::array<std::size_t, 1> attention{0};
+    const std::string current_shell = milesing::canonical_workspace_text(
+        world, empty_runtime, {}, attention);
+
+    std::istringstream input(current_shell);
+    std::ostringstream output;
+    output.imbue(std::locale::classic());
+    for (std::string line; std::getline(input, line);) {
+        if (line == "MILESING-LIGHT-WORKSPACE 2") {
+            output << "MILESING-LIGHT-WORKSPACE 1\n";
+            continue;
+        }
+        if (line.starts_with("NODE ")) {
+            std::istringstream line_input(line);
+            std::vector<std::string> fields;
+            for (std::string field; line_input >> field;) fields.push_back(std::move(field));
+            if (fields.size() != 16) {
+                throw std::runtime_error(
+                    "self-contained version-1 fixture received a malformed current node shell");
+            }
+            const std::size_t catalog_index =
+                static_cast<std::size_t>(std::stoull(fields[2]));
+            fields[13] = milesing::hex_token(
+                milesing::light_catalog[catalog_index].self_number);
+            fields[14] = milesing::hex_token(legacy_v1_test_code(catalog_index));
+            fields[15] = milesing::hex_token(legacy_v1_test_origin(catalog_index));
+            for (std::size_t i = 0; i < fields.size(); ++i) {
+                if (i != 0) output << ' ';
+                output << fields[i];
+            }
+            output << '\n';
+            continue;
+        }
+        if (line != "END") {
+            output << line << '\n';
+            continue;
+        }
+        for (std::size_t route = 0; route < expressions.size(); ++route) {
+            const auto& expression = expressions[route];
+            output << "EXPRESSION " << route << ' ' << expression.catalog_index << ' '
+                   << expression.operands.size() << ' ' << (expression.result ? 1 : 0) << ' '
+                   << milesing::hex_token("historical exact finite realization") << '\n';
+            for (std::size_t i = 0; i < expression.operands.size(); ++i) {
+                output << "OPERAND " << i << ' '
+                       << milesing::canonical_operand(expression.operands[i].value) << '\n';
+            }
+            if (expression.result) {
+                output << "RESULT " << milesing::canonical_operand(*expression.result) << '\n';
+            }
+        }
+        for (std::size_t route = 0; route < expressions.size(); ++route) {
+            const auto& expression = expressions[route];
+            output << "APPLIED " << route << ' ' << expression.catalog_index << ' '
+                   << expression.catalog_index << ' ' << expression.operands.size() << ' '
+                   << milesing::hex_token("public self-test") << ' '
+                   << milesing::hex_token("strict version-1 migration") << '\n';
+            for (std::size_t i = 0; i < expression.operands.size(); ++i) {
+                const auto& designation = expression.operands[i];
+                output << "DESIGNATION " << i << ' '
+                       << milesing::hex_token(designation.role) << " - - "
+                       << milesing::canonical_operand(designation.value) << '\n';
+            }
+        }
+        output << "END\n";
+    }
+    return output.str();
+}
+
+struct LegacyV1SelfTestRecord {
+    std::size_t header_begin{};
+    std::size_t header_end{};
+    std::size_t result_begin{};
+    std::size_t result_end{};
+    std::size_t route{};
+    std::size_t catalog_index{};
+    std::size_t operand_count{};
+    std::size_t exact{};
+    std::string note{};
+};
+
+LegacyV1SelfTestRecord legacy_v1_self_test_record(
+    const std::string& body, std::size_t requested_catalog_index) {
+    std::size_t line_begin{};
+    while (line_begin < body.size()) {
+        const std::size_t line_end = body.find('\n', line_begin);
+        if (line_end == std::string::npos) break;
+        std::istringstream fields(body.substr(line_begin, line_end - line_begin));
+        std::string kind;
+        LegacyV1SelfTestRecord record;
+        if ((fields >> kind >> record.route >> record.catalog_index >>
+                record.operand_count >> record.exact >> record.note) &&
+            kind == "EXPRESSION" && record.catalog_index == requested_catalog_index) {
+            record.header_begin = line_begin;
+            record.header_end = line_end;
+            record.result_begin = line_end + 1;
+            for (std::size_t i = 0; i < record.operand_count; ++i) {
+                record.result_begin = body.find('\n', record.result_begin);
+                if (record.result_begin == std::string::npos) {
+                    throw std::runtime_error(
+                        "self-contained version-1 fixture operand was unterminated");
+                }
+                ++record.result_begin;
+            }
+            record.result_end = body.find('\n', record.result_begin);
+            if (record.result_end == std::string::npos ||
+                body.compare(record.result_begin, 7, "RESULT ") != 0) {
+                throw std::runtime_error(
+                    "self-contained version-1 fixture result was absent");
+            }
+            return record;
+        }
+        line_begin = line_end + 1;
+    }
+    throw std::runtime_error(
+        "self-contained version-1 fixture did not contain the requested expression");
+}
+
+std::string legacy_v1_with_altered_result(
+    std::string body, std::size_t catalog_index) {
+    const auto record = legacy_v1_self_test_record(body, catalog_index);
+    const std::string_view replacement =
+        body.compare(record.result_begin + 7, 3, "B:0") == 0 ? "B:1" : "B:0";
+    body.replace(record.result_begin + 7,
+                 record.result_end - (record.result_begin + 7), replacement);
+    return body;
+}
+
+std::string legacy_v1_with_hybrid_arity(
+    std::string body, std::size_t catalog_index) {
+    const auto record = legacy_v1_self_test_record(body, catalog_index);
+    std::ostringstream header;
+    header << "EXPRESSION " << record.route << ' ' << record.catalog_index << ' '
+           << static_cast<std::size_t>(
+                  milesing::light_catalog[record.catalog_index].minimum_operands) << ' '
+           << record.exact << ' ' << record.note;
+    body.replace(record.header_begin, record.header_end - record.header_begin,
+                 header.str());
+    return body;
+}
+
+std::string legacy_v1_without_result(
+    std::string body, std::size_t catalog_index) {
+    const auto record = legacy_v1_self_test_record(body, catalog_index);
+    body.erase(record.result_begin, record.result_end + 1 - record.result_begin);
+    std::ostringstream header;
+    header << "EXPRESSION " << record.route << ' ' << record.catalog_index << ' '
+           << record.operand_count << " 0 " << record.note;
+    body.replace(record.header_begin, record.header_end - record.header_begin,
+                 header.str());
+    return body;
+}
+
+} // namespace
+
 int main() {
     std::vector<std::filesystem::path> temporary_bodies;
     try {
+        if (milesing::workspace_path_is_on_local_volume(
+                std::filesystem::path{L"\\\\server\\share\\My Light.mlight"}) ||
+            milesing::workspace_path_is_on_local_volume(
+                std::filesystem::path{L"\\\\?\\UNC\\server\\share\\My Light.mlight"}) ||
+            !milesing::workspace_path_is_on_local_volume(
+                std::filesystem::temp_directory_path() / L"MilesingLight-local-volume-probe.mlight")) {
+            throw std::runtime_error(
+                "workspace path privacy did not distinguish a directly attached local volume from UNC/remote spellings");
+        }
+        {
+            const std::filesystem::path probe_root =
+                std::filesystem::temp_directory_path() /
+                (std::wstring(L"MilesingLight-reparse-probe-") +
+                 std::to_wstring(GetCurrentProcessId()) + L"-" +
+                 std::to_wstring(GetTickCount64()));
+            const std::filesystem::path direct_target = probe_root / L"direct";
+            const std::filesystem::path linked_route = probe_root / L"linked";
+            std::error_code setup_error;
+            std::filesystem::create_directories(direct_target, setup_error);
+            bool created_link = false;
+            if (!setup_error) {
+                constexpr DWORD allow_unprivileged_symbolic_link = 0x2;
+                created_link = CreateSymbolicLinkW(
+                    linked_route.c_str(), direct_target.c_str(),
+                    SYMBOLIC_LINK_FLAG_DIRECTORY | allow_unprivileged_symbolic_link) != FALSE;
+            }
+            const bool admitted_reparse = created_link &&
+                milesing::workspace_path_is_on_local_volume(
+                    linked_route / L"My Light.mlight");
+            std::error_code cleanup_error;
+            if (created_link) std::filesystem::remove(linked_route, cleanup_error);
+            cleanup_error.clear();
+            std::filesystem::remove(direct_target, cleanup_error);
+            cleanup_error.clear();
+            std::filesystem::remove(probe_root, cleanup_error);
+            if (admitted_reparse) {
+                throw std::runtime_error(
+                    "workspace path privacy admitted a traversable reparse-point component");
+            }
+        }
+
+        const milesing::CatalogValidation catalog_validation =
+            milesing::validate_light_catalog();
+        if (!catalog_validation.valid) {
+            for (const std::string& failure : catalog_validation.errors) {
+                std::fprintf(stderr, "FAIL binding/catalog: %s\n", failure.c_str());
+            }
+            return 2;
+        }
+
         const milesing::OperatorVerificationReport report = milesing::verify_all_operator_fixtures();
         for (const milesing::OperatorVerification& failure : report.failures) {
-            std::fprintf(stderr, "FAIL %s / %s: %s%s%s\n", failure.unit.c_str(), failure.code.c_str(),
+            std::fprintf(stderr, "FAIL executor verification %s / %s: %s%s%s\n", failure.self_number.c_str(), failure.code.c_str(),
                          failure.law.c_str(), failure.detail.empty() ? "" : " — ", failure.detail.c_str());
         }
         if (!report.all_passed() || report.checked != milesing::light_catalog.size()) {
-            std::fprintf(stderr, "FAIL operator laws: %zu/%zu passed\n", report.passed, report.checked);
+            std::fprintf(stderr, "FAIL executor verifications: %zu/%zu passed\n", report.passed, report.checked);
             return 2;
         }
-        std::printf("PASS %zu/%zu world-bound Light operator laws\n", report.passed, report.checked);
+        std::printf("PASS %zu/%zu finite executor verifications\n", report.passed, report.checked);
+
+        const auto first_binding = milesing::direct_format_for_catalog_index(0);
+        const auto last_binding = milesing::direct_format_for_catalog_index(
+            milesing::light_catalog.size() - 1);
+        if (first_binding.self_number != "MY LIGHT" ||
+            first_binding.codable_symbol != "`divinand(whole, operations)`" ||
+            last_binding.self_number != "LIGHT TREATMENT" ||
+            last_binding.codable_symbol != "`sheaf_glue(cover, local_sections)`" ||
+            first_binding.direct_proof !=
+                milesing::generated_self_number_bindings::value(0, 9) ||
+            last_binding.direct_proof !=
+                milesing::generated_self_number_bindings::value(
+                    milesing::light_catalog.size() - 1, 9)) {
+            throw std::runtime_error("first or last exact binding field changed");
+        }
+        for (std::size_t entry = 0; entry < milesing::light_catalog.size(); ++entry) {
+            const auto format = milesing::direct_format_for_catalog_index(entry);
+            const auto fields = format.ordered_fields();
+            for (std::size_t field = 0; field < fields.size(); ++field) {
+                const std::string_view generated =
+                    milesing::generated_self_number_bindings::value(entry, field);
+                if (fields[field] != generated ||
+                    fields[field].data() != generated.data()) {
+                    throw std::runtime_error(
+                        "a direct format is not an exact view into generated binding bytes");
+                }
+            }
+            const auto by_name = milesing::direct_format_for_self_number(
+                milesing::light_catalog[entry].self_number);
+            if (by_name.ordered_fields() != fields ||
+                milesing::render_self_number_direct_format(by_name).find(
+                    "Direct proof: " + std::string(fields[9])) == std::string::npos) {
+                throw std::runtime_error(
+                    "self-number binding lookup or exact ten-field rendering changed");
+            }
+        }
+        std::printf("PASS 112/112 exact authored bindings (1,120 fields)\n");
+
+        {
+            milesing::Editor binding_editor;
+            const milesing::RectD client{0.0, 0.0, 1500.0, 920.0};
+            binding_editor.set_workspace(milesing::Workspace::Operations);
+            if (!binding_editor.set_operation_operand(
+                    1, 0, milesing::Operand::number(17.0), "binding read-only guard")) {
+                throw std::runtime_error("binding interaction fixture could not customize its guard operand");
+            }
+            const std::string guarded_operand = milesing::canonical_operand(
+                binding_editor.operation_drafts()[1].sockets[0].value);
+            const std::size_t expressions_before =
+                binding_editor.runtime().expressions().size();
+            const std::size_t receipts_before =
+                binding_editor.applied_operations().size();
+            if (!binding_editor.key_down('B', false, false, false, client) ||
+                !binding_editor.operation_binding_sheet_open()) {
+                throw std::runtime_error("B did not open the Operations binding sheet");
+            }
+            const auto regions = milesing::responsive_editor_layout(client);
+            const milesing::Vec2 sheet_point{
+                regions.canvas.x + 20.0, regions.canvas.y + 100.0};
+            binding_editor.pointer_wheel(sheet_point, -1.0, client);
+            if (binding_editor.operation_binding_scroll() <= 0.0) {
+                throw std::runtime_error("binding-sheet wheel did not scroll its read-only content");
+            }
+            binding_editor.key_down(VK_HOME, false, false, false, client);
+            if (binding_editor.operation_binding_scroll() != 0.0) {
+                throw std::runtime_error("binding-sheet Home did not reach the first field");
+            }
+            binding_editor.key_down(VK_END, false, false, false, client);
+            if (binding_editor.operation_binding_scroll() <= 0.0) {
+                throw std::runtime_error("binding-sheet End did not reach its bounded final extent");
+            }
+            const std::size_t cursor_before = binding_editor.operation_cursor();
+            binding_editor.key_down(VK_RIGHT, false, false, false, client);
+            if (binding_editor.operation_cursor() == cursor_before ||
+                binding_editor.operation_binding_scroll() != 0.0) {
+                throw std::runtime_error("binding-sheet arrows did not navigate and reset scroll");
+            }
+            binding_editor.key_down(VK_RETURN, false, false, false, client);
+            binding_editor.key_down(VK_OEM_PLUS, false, false, false, client);
+            binding_editor.key_down('R', false, false, false, client);
+            binding_editor.key_down('Z', true, false, false, client);
+            if (binding_editor.runtime().expressions().size() != expressions_before ||
+                binding_editor.applied_operations().size() != receipts_before ||
+                milesing::canonical_operand(
+                    binding_editor.operation_drafts()[1].sockets[0].value) != guarded_operand ||
+                binding_editor.operation_drafts()[1].sockets[0].role !=
+                    "binding read-only guard") {
+                throw std::runtime_error(
+                    "binding-sheet controls mutated operation work or invoked an executor");
+            }
+            binding_editor.key_down(VK_ESCAPE, false, false, false, client);
+            if (binding_editor.operation_binding_sheet_open()) {
+                throw std::runtime_error("Escape did not close the Operations binding sheet");
+            }
+        }
+        std::printf("PASS read-only Operations binding-sheet interactions\n");
+
+        milesing::AuthoredWorld measured_world = milesing::AuthoredWorld::from_light();
+        milesing::LightRuntime measured_runtime(64);
+        const milesing::SpatialSystemAssociation measured_foundation =
+            milesing::SystemParticipation::measured_foundation(
+                measured_world, measured_runtime, milesing::Vec3{});
+        const auto sheaf_definition = milesing::find_light_by_self_number("LIGHT TREATMENT");
+        const auto my_light_definition = milesing::find_light_by_self_number("MY LIGHT");
+        const bool applied_treatment = sheaf_definition && std::any_of(
+            measured_foundation.applied_operations.begin(),
+            measured_foundation.applied_operations.end(),
+            [&](const milesing::AppliedOperation& application) {
+                return application.catalog_index ==
+                    milesing::light_catalog_index(*sheaf_definition);
+            });
+        const bool applied_my_light = my_light_definition && std::any_of(
+            measured_foundation.applied_operations.begin(),
+            measured_foundation.applied_operations.end(),
+            [&](const milesing::AppliedOperation& application) {
+                return application.catalog_index ==
+                    milesing::light_catalog_index(*my_light_definition);
+            });
+        const auto treatment_whole = std::find_if(
+            measured_foundation.derived_wholes.begin(),
+            measured_foundation.derived_wholes.end(),
+            [](const milesing::DerivedGraphWhole& whole) {
+                return whole.self_number == "LIGHT TREATMENT";
+            });
+        const auto route_whole = std::find_if(
+            measured_foundation.measure_wholes.begin(),
+            measured_foundation.measure_wholes.end(),
+            [](const milesing::MeasureWhole& whole) {
+                return whole.name == "MY LIGHT / measured finite unary route";
+            });
+        const auto retains_every_bit = [](
+                const std::vector<milesing::MeasuredBitWhole>& carrier,
+                const std::vector<milesing::MeasuredBitWhole>& required) {
+            return std::all_of(required.begin(), required.end(),
+                [&](const milesing::MeasuredBitWhole& bit) {
+                    return std::any_of(carrier.begin(), carrier.end(),
+                        [&](const milesing::MeasuredBitWhole& candidate) {
+                            return milesing::same_measured_bit_whole(candidate, bit);
+                        });
+                });
+        };
+        const std::string expected_route_encoding = milesing::canonical_operand(
+            milesing::Operand::names({"converse"}));
+        const std::vector<std::uint8_t> expected_route_bytes(
+            expected_route_encoding.begin(), expected_route_encoding.end());
+        if (measured_foundation.measure_wholes.size() < 6 ||
+            measured_foundation.derived_wholes.empty() ||
+            !applied_treatment || !applied_my_light ||
+            measured_foundation.window_evidence.size() != 1 ||
+            measured_foundation.window_evidence.front().acquired_occurrences != 1 ||
+            treatment_whole == measured_foundation.derived_wholes.end() ||
+            route_whole == measured_foundation.measure_wholes.end() ||
+            !measured_foundation.divinand_whole ||
+            measured_foundation.rooted_expression.value !=
+                measured_foundation.divinand_whole->carrier_expression.value ||
+            measured_foundation.divinand_whole->operations !=
+                milesing::NameList{"converse"} ||
+            std::find(measured_foundation.light_units.begin(),
+                      measured_foundation.light_units.end(),
+                      "CONISM") == measured_foundation.light_units.end() ||
+            route_whole->exact_bytes != expected_route_bytes ||
+            measured_foundation.divinand_whole->source_whole.source_graph_whole !=
+                treatment_whole->name ||
+            !milesing::typed_whole_view_retains_ancestry(
+                measured_foundation.divinand_whole->source_whole,
+                *treatment_whole) ||
+            measured_foundation.divinand_whole->derived_whole.self_number != "MY LIGHT" ||
+            !milesing::exact_derived_graph_whole(
+                measured_foundation.divinand_whole->derived_whole) ||
+            std::find(
+                measured_foundation.divinand_whole->derived_whole.source_measure_wholes.begin(),
+                measured_foundation.divinand_whole->derived_whole.source_measure_wholes.end(),
+                route_whole->name) ==
+                measured_foundation.divinand_whole->derived_whole.source_measure_wholes.end() ||
+            std::find(
+                measured_foundation.divinand_whole->derived_whole.source_graph_wholes.begin(),
+                measured_foundation.divinand_whole->derived_whole.source_graph_wholes.end(),
+                treatment_whole->name) ==
+                measured_foundation.divinand_whole->derived_whole.source_graph_wholes.end() ||
+            !retains_every_bit(
+                measured_foundation.divinand_whole->exact_bit_ancestry,
+                treatment_whole->exact_bit_ancestry) ||
+            !retains_every_bit(
+                measured_foundation.divinand_whole->exact_bit_ancestry,
+                route_whole->measured_bits)) {
+            throw std::runtime_error(
+                "measured foundation did not carry the exact live LIGHT TREATMENT whole and measured unary route into one rooted MY LIGHT DivinandWhole");
+        }
+        const milesing::Expression* divinand_expression = measured_runtime.find(
+            measured_foundation.divinand_whole->carrier_expression);
+        if (!divinand_expression || !divinand_expression->value ||
+            !std::holds_alternative<milesing::RelationValue>(
+                divinand_expression->value->body)) {
+            throw std::runtime_error(
+                "rooted MY LIGHT expression did not retain its exact reusable relation result");
+        }
+        const milesing::TypedWholeView reusable_divinand_view =
+            milesing::form_typed_whole_view(
+                "MY LIGHT / recursively reusable DivinandWhole view",
+                measured_foundation.divinand_whole->derived_whole,
+                milesing::WholeViewKind::relation,
+                "finite MY LIGHT result retaining exact recursive ancestry",
+                "divinand whole as next exact source",
+                *divinand_expression->value,
+                measured_foundation.divinand_whole->derived_whole.graph);
+        if (!milesing::typed_whole_view_retains_ancestry(
+                reusable_divinand_view,
+                measured_foundation.divinand_whole->derived_whole)) {
+            throw std::runtime_error(
+                "MY LIGHT DivinandWhole could not re-enter the whole-self derivation body with exact ancestry");
+        }
+        const auto& work = measured_foundation.window_evidence.front();
+        const bool multiplication_safe = work.peak_acquisition_ticks <=
+            (std::numeric_limits<std::uint64_t>::max)() / 100;
+        if (multiplication_safe &&
+            work.effective_sample_period_ticks < work.peak_acquisition_ticks * 100) {
+            throw std::runtime_error(
+                "measured workload cadence does not retain its declared one-percent headroom");
+        }
+        std::printf(
+            "PASS live whole-self derivation: measured bits + duration + recursive SIZE/DESIGNING + LIGHT TREATMENT sheaf glue + recursively reusable MY LIGHT DivinandWhole(converse); acquisition=%llu ticks, adaptive period=%llu ticks\n",
+            static_cast<unsigned long long>(work.acquisition_ticks),
+            static_cast<unsigned long long>(work.effective_sample_period_ticks));
+
+        milesing::Editor measured_editor;
+        milesing::ParsedWorkspace measured_workspace{
+            std::move(measured_world), std::move(measured_runtime), {}, {0}};
+        std::string measured_restore_error;
+        if (!measured_editor.restore_workspace(
+                std::move(measured_workspace), measured_restore_error)) {
+            throw std::runtime_error(
+                "measured runtime could not enter the authored workspace: " +
+                measured_restore_error);
+        }
+        std::string measured_association_error;
+        if (!measured_editor.associate_applied_operations(
+                measured_foundation.applied_operations,
+                measured_association_error) ||
+            measured_editor.applied_operations().size() !=
+                measured_foundation.applied_operations.size()) {
+            throw std::runtime_error(
+                "completed LIGHT TREATMENT operations were not associated with their exact authored world/runtime: " +
+                measured_association_error);
+        }
+        const std::string measured_workspace_body = milesing::canonical_workspace_text(
+            measured_editor.world(), measured_editor.runtime(),
+            measured_editor.applied_operations(), measured_editor.selection());
+        const milesing::WorkspaceParseResult measured_workspace_reopened =
+            milesing::parse_canonical_workspace(measured_workspace_body);
+        if (!measured_workspace_reopened ||
+            !measured_workspace_reopened.workspace ||
+            measured_workspace_reopened.workspace->applied_operations.size() !=
+                measured_foundation.applied_operations.size()) {
+            throw std::runtime_error(
+                "associated LIGHT TREATMENT expressions and receipts did not survive canonical workspace reopening");
+        }
+        const std::string measured_workspace_recanonical =
+            milesing::canonical_workspace_text(
+                measured_workspace_reopened.workspace->world,
+                measured_workspace_reopened.workspace->runtime,
+                measured_workspace_reopened.workspace->applied_operations,
+                measured_workspace_reopened.workspace->attention);
+        if (measured_workspace_recanonical != measured_workspace_body) {
+            throw std::runtime_error(
+                "canonical reopening changed a LIGHT TREATMENT or MY LIGHT expression/receipt");
+        }
+        std::printf(
+            "PASS authored LIGHT TREATMENT + MY LIGHT association: exact expressions + operands + receipts survive normal canonical workspace persistence\n");
 
         milesing::AuthoredWorld corpus_world = milesing::AuthoredWorld::from_light();
         milesing::LightRuntime corpus_runtime(4096);
@@ -1033,7 +1942,7 @@ int main() {
         corpus_applied.reserve(milesing::light_catalog.size());
         for (const milesing::LightDefinition& definition : milesing::light_catalog) {
             corpus_applied.push_back(milesing::exercise_operator(
-                corpus_world, corpus_runtime, definition.unit,
+                corpus_world, corpus_runtime, definition.self_number,
                 "guarded all-tag canonical corpus",
                 "prove every assigned Light fixture and emitted operand tag survives exact canonical replay").application);
         }
@@ -1057,7 +1966,149 @@ int main() {
                 corpus_parsed.workspace->attention) != corpus_body) {
             throw std::runtime_error("all-tag and all-operator canonical corpus did not round-trip byte-exactly");
         }
-        std::printf("PASS canonical codec: every Operand tag + 111 applied fixtures round-trip byte-exactly\n");
+        std::printf(
+            "PASS canonical codec: every Operand tag + %zu applied self-number fixtures round-trip byte-exactly\n",
+            milesing::light_catalog.size());
+
+        {
+            const std::vector<LegacyV1SelfTestExpression> historical_expressions =
+                legacy_v1_self_test_expressions();
+            const std::string historical_body =
+                legacy_v1_self_test_body(historical_expressions);
+            const milesing::WorkspaceParseResult migrated =
+                milesing::parse_canonical_workspace(historical_body);
+            if (!migrated || !migrated.workspace ||
+                migrated.workspace->runtime.expressions().size() !=
+                    historical_expressions.size() ||
+                migrated.workspace->applied_operations.size() !=
+                    historical_expressions.size()) {
+                throw std::runtime_error(
+                    "self-contained version-1 fixture did not migrate every expression and receipt: " +
+                    migrated.error);
+            }
+
+            const auto& current_expressions =
+                migrated.workspace->runtime.expressions();
+            const auto& current_applied = migrated.workspace->applied_operations;
+            for (std::size_t route = 0; route < historical_expressions.size(); ++route) {
+                const auto& historical = historical_expressions[route];
+                const auto& expression = current_expressions[route];
+                const auto& applied_operation = current_applied[route];
+                if (expression.catalog_index != historical.catalog_index ||
+                    expression.operands.size() !=
+                        milesing::light_catalog[historical.catalog_index].minimum_operands ||
+                    applied_operation.catalog_index != historical.catalog_index ||
+                    applied_operation.expression.value != route ||
+                    applied_operation.operands.size() != expression.operands.size()) {
+                    throw std::runtime_error(
+                        "version-1 migration did not form the exact current expression/receipt shape");
+                }
+                milesing::LightRuntime replay(historical_expressions.size());
+                const milesing::Invocation current = replay.invoke_with_validated_prefix(
+                    milesing::light_catalog[historical.catalog_index].code,
+                    expression.operands, route);
+                if (current.value.has_value() != expression.value.has_value() ||
+                    (current.value && milesing::canonical_operand(*current.value) !=
+                        milesing::canonical_operand(*expression.value)) ||
+                    current.note != expression.note) {
+                    throw std::runtime_error(
+                        "version-1 migrated expression did not replay with its current operation meaning");
+                }
+                for (std::size_t i = 0; i < applied_operation.operands.size(); ++i) {
+                    const auto& designation = applied_operation.operands[i];
+                    if (designation.operand_index != i ||
+                        milesing::canonical_operand(designation.value) !=
+                            milesing::canonical_operand(expression.operands[i])) {
+                        throw std::runtime_error(
+                            "version-1 enriched receipt disagrees with its current expression operand");
+                    }
+                    const auto synthesized = milesing::legacy_v1_synthesized_role(
+                        historical.catalog_index, i);
+                    if (!synthesized.empty() &&
+                        (designation.role != synthesized || designation.authored_node ||
+                         designation.spatial_position)) {
+                        throw std::runtime_error(
+                            "version-1 enriched receipt did not retain its exact derived role");
+                    }
+                }
+                for (std::size_t historical_index = 0;
+                     historical_index < historical.operands.size(); ++historical_index) {
+                    const std::size_t current_index =
+                        milesing::legacy_v1_operands_require_migration(
+                            historical.catalog_index)
+                            ? milesing::legacy_v1_designation_target(
+                                  historical.catalog_index, historical_index)
+                            : historical_index;
+                    if (current_index >= applied_operation.operands.size() ||
+                        applied_operation.operands[current_index].role !=
+                            historical.operands[historical_index].role) {
+                        throw std::runtime_error(
+                            "version-1 enriched receipt did not retain a historical designation role");
+                    }
+                }
+            }
+
+            const std::string version_two = milesing::canonical_workspace_text(
+                migrated.workspace->world, migrated.workspace->runtime,
+                migrated.workspace->applied_operations,
+                migrated.workspace->attention);
+            const milesing::WorkspaceParseResult reparsed =
+                milesing::parse_canonical_workspace(version_two);
+            if (!reparsed || !reparsed.workspace ||
+                milesing::canonical_workspace_text(
+                    reparsed.workspace->world, reparsed.workspace->runtime,
+                    reparsed.workspace->applied_operations,
+                    reparsed.workspace->attention) != version_two) {
+                throw std::runtime_error(
+                    "version-1 migration did not form an exact stable version-2 body");
+            }
+
+            constexpr std::array<std::size_t, 8> changed_routes{
+                0, 4, 6, 54, 61, 76, 77, 98};
+            for (const std::size_t catalog_index : changed_routes) {
+                const milesing::WorkspaceParseResult altered_result =
+                    milesing::parse_canonical_workspace(
+                        legacy_v1_with_altered_result(historical_body, catalog_index));
+                if (altered_result) {
+                    throw std::runtime_error(
+                        "version-1 changed-route migration accepted an altered historical result");
+                }
+                const milesing::WorkspaceParseResult hybrid_arity =
+                    milesing::parse_canonical_workspace(
+                        legacy_v1_with_hybrid_arity(historical_body, catalog_index));
+                if (hybrid_arity ||
+                    hybrid_arity.error.find(
+                        "expression operand count disagrees with its assigned operator") ==
+                        std::string::npos) {
+                    throw std::runtime_error(
+                        "version-1 parser accepted or misclassified a current/historical hybrid arity at catalog " +
+                        std::to_string(catalog_index) + ": " + hybrid_arity.error);
+                }
+            }
+
+            const milesing::WorkspaceParseResult altered_unchanged =
+                milesing::parse_canonical_workspace(
+                    legacy_v1_with_altered_result(historical_body, 1));
+            if (altered_unchanged ||
+                altered_unchanged.error.find(
+                    "version-1 unchanged operation result disagrees with current replay") ==
+                    std::string::npos) {
+                throw std::runtime_error(
+                    "version-1 unchanged route accepted or misclassified an altered result");
+            }
+            const milesing::WorkspaceParseResult missing_unchanged =
+                milesing::parse_canonical_workspace(
+                    legacy_v1_without_result(historical_body, 1));
+            if (missing_unchanged ||
+                missing_unchanged.error.find(
+                    "version-1 unchanged operation result presence disagrees with current replay") ==
+                    std::string::npos) {
+                throw std::runtime_error(
+                    "version-1 unchanged route accepted or misclassified a missing result");
+            }
+            std::printf(
+                "PASS strict version-1 migration: 8 changed arities + exact receipt enrichment + current replay + stable v2 + 18 altered-result/arity/presence rejections\n");
+        }
 
         milesing::AuthoredWorld world = milesing::AuthoredWorld::from_light();
         milesing::LightRuntime runtime(32);

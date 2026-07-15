@@ -1,20 +1,33 @@
 MIGRATION LOGIC CONCEPT SPACE
 
+STATUS
+The live migration is the exact version-1 to version-2 route stated below.
+Chunk preservation, general transformation receipts and arbitrary generations
+remain development targets.
+
 PURPOSE
 The authored Light work survives improvements to code, renderer, representation, and Windows adapters.
 
-DIRECT MIGRATION FLOW
-- Every file and chunk declares its format generation.
-- The current parser understands its own generation plus deliberately retained prior generations.
-- Read a prior work into the shared authored model; migration never rewrites source bytes in place.
-- Apply explicit ordered transformations whose inputs, outputs, purpose, and expected count changes are recorded.
-- Preserve unknown chunks as inert bounded bodies when safe, or portray exactly why the new app cannot apply them.
-- Resolve actual Light references by exact name, place, expression, and source digest; a technical lookup change cannot rename a conceptual unit.
-- Write the migrated authored body as a new candidate.
-- Reopen and compare conceptual bodies, relations, expressions, recipes, geometry, text/math, resources, and divinand routes.
-- Keep the prior complete work and a migration receipt until Miles deliberately releases them.
-- Renderer changes regenerate portrayals from authored causes.
-- Windows adapter changes keep the same semantic commands and authored effects.
+LIVE VERSION-1 TO VERSION-2 FLOW
+- Accept only the exact version-1 header and the original 111-node extent.
+- Require each original NODE self-number / operator-code / origin tuple to match
+  its exact published catalog route, including only the enumerated historical
+  origin spellings.
+- Parse operands within the current bounds, then replay every expression through
+  its current named operation; stored result and note text cannot dictate the
+  current mathematical result.
+- Retain original IDs, authored geometry, relations, order, expression routes,
+  operand designations and explicit attention.  An early file without ATTENTION
+  is admitted only when a valid SIZE receipt proves the selected self numbers.
+- Associate the new LIGHT TREATMENT satellite with the existing REALITY body
+  while leaving every original route in place.
+- Validate the resulting 112-self-number workspace.  The source file remains
+  unchanged; an explicit later save emits canonical version 2 through the normal
+  protected-candidate route.
+- Version-2 input must reproduce exact canonical version-2 text after replay.
 
-MIGRATION RECEIPT
-Source generation; destination generation; transformations applied; retained unknown material; authored counts before/after; Light references before/after; hashes; candidate path; protected prior path; reopen result; recovery command.
+EXPANDED MIGRATION TARGET
+Ordered transformations across later generations may add a dedicated receipt
+containing source/destination generation, transformations, authored counts,
+exact Light routes, hashes, candidate/prior paths and reopen results.  Unknown
+future records are currently rejected rather than silently retained.

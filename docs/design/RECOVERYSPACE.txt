@@ -1,20 +1,32 @@
 RECOVERY CONCEPT SPACE
 
+STATUS
+V0.2 implements bounded candidate/prior writing, inspection helpers and verified
+prior cleanup.  A full visible recovery workspace and promotion interface remain
+development work.
+
 PURPOSE
 Opening the app finds the strongest complete local authored body and makes every recovery choice understandable before changing files.
 
-DIRECT RECOVERY FLOW
-- Inspect the selected final work, protected prior body, and known sibling candidates by header first.
-- Parse each body under strict byte, item, recursion, expansion, and duration ceilings.
-- Verify chunk and manifest digests.
-- Portray each complete candidate with generation, write time, logical root, authored-work summary, and exact path.
-- Prefer no body silently: show the current final first and make a stronger recoverable body visible as a deliberate choice.
-- Open a chosen body read-only before promoting it.
-- Promotion writes and verifies a new candidate, then follows the replacement flow.
-- Preserve the original recovery bodies until the promoted result has reopened successfully.
-- A missing render cache, search index, generated geometry body, or decoded image never damages authored work; regenerate it.
-- A recipe that depended on an expired non-derivable hardware sample portrays that dependency and opens a fresh present encounter only through a new exact grant.
-- Recovery commands are keyboard reachable and announced through the same semantic command model.
+LIVE RECOVERY BODY
+- A replacement save preserves a complete prior canonical body beside the final
+  path and verifies the new final body after replacement.
+- Inspection helpers enumerate the selected final, protected priors and sibling
+  candidates within explicit entry, body and byte limits; each inspected body
+  receives a complete-body SHA-256 and canonical parse result.
+- Cleanup retains the newest two verified canonical priors by default, removes
+  only older verified canonical priors, and holds uncertain bodies and diagnostic
+  candidates.
+- Open and save failures leave the live Editor adoption point unchanged and
+  report their reason.
 
-CODE HOME
-SUPPORT.txt owns inspection, bounded parsing, comparison, and promotion. EDITOR.txt owns the visible recovery workspace. APP.txt owns explicit invocation and window messaging.
+VISIBLE RECOVERY TARGET
+Portray inspected bodies with exact path, byte extent, hash, generation and
+authored summary; allow read-only opening and explicit promotion through the
+same verified replacement flow.  No such promotion interface is attributed to
+v0.2 yet.
+
+CODE ASSOCIATIONS
+SUPPORT.txt is associated with current inspection, bounded parsing and verified
+cleanup.  EDITOR.txt and APP.txt are associated with the later visible recovery
+and explicit promotion work.

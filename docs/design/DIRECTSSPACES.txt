@@ -1,5 +1,13 @@
 DIRECTX, DIRECT2D, AND DIRECTWRITE CONCEPT SPACE
 
+STATUS
+This file maps the complete renderer target.  It does not attribute every item
+below to the current v0.2 executable.  The live release currently has the native
+D3D11/DXGI/D2D/DirectWrite window and bounded MY LIGHT, 2D, 3D, operation,
+time/media and LIGHT TREATMENT portrayals.  Offscreen portals, full text/math
+authorship, image/media intake, advanced cameras, generated worlds and broad
+editor tooling remain work named by this concept map.
+
 PURPOSE
 One original renderer manifests the same Light-authored world as deep 3D, close 2D, exact text, mathematics, generated geometry, nested portals, media surfaces, time, and accessible visual attention.
 
@@ -38,8 +46,8 @@ RENDER PATH
 
 TEXT AND MATHEMATICS
 - DirectWrite IDWriteTextLayout performs shaping, measurement, bidirectional layout, styling, and hit testing.
-- The original text editor owns caret movement, grapheme attention, selection, composition, commands, and authored changes.
-- The original math layout owns fractions, powers, roots, matrices, operators, grouping, operand sockets, and expression inspection.
+- The original text editor is associated with caret movement, grapheme attention, selection, composition, commands, and authored changes.
+- The original math layout is associated with fractions, powers, roots, matrices, operators, grouping, operand sockets, and expression inspection.
 - Text stays text and mathematics stays structured mathematics; rasterization is a disposable portrayal.
 
 TIME AND MEDIA

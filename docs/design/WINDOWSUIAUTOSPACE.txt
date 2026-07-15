@@ -1,5 +1,12 @@
 WINDOWS UI AUTOMATION CONCEPT SPACE
 
+STATUS
+This is the accessibility implementation target.  V0.2 already has keyboard
+workspaces, focus portrayal, readable scaling, high-contrast/reduced-motion
+preference hooks and semantic editor commands.  A native UI Automation provider
+tree and the patterns below are not attributed to the release until their
+provider source and executable accessibility checks exist.
+
 PURPOSE
 The assistive encounter reaches the same Light, authored worlds, commands, text, mathematics, portals, timeline, writing, and recovery as the visual encounter.
 
@@ -18,8 +25,8 @@ ORIGINAL PROVIDER BODY
 - Readable scale, system contrast, visible focus, and reduced motion alter portrayal while keeping authored meaning available.
 
 CODE CONNECTION
-- EDITOR.txt owns the semantic tree and command descriptions.
-- SUPPORT.txt owns exact text, expressions, authored bodies, and relation paths.
+- EDITOR.txt is associated with the semantic tree and command descriptions.
+- SUPPORT.txt is associated with exact text, expressions, authored bodies, and relation paths.
 - RENDERER.txt consumes accessibility emphasis and visual preferences.
 - APP.txt answers WM_GETOBJECT and forwards focus/event changes.
 

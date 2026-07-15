@@ -1,5 +1,11 @@
 GODOT BEHAVIOR CONCEPT SPACE REBUILT AS ORIGINAL MILESING C++20
 
+STATUS
+This is a concept-derived feature map, not a release checklist.  It neither
+copies Godot source nor claims that every mapped spatial/editor feature is
+present in v0.2.  REALIZATION.txt and executable verification identify the live
+subset; the remaining lines designate original Milesing C++ work to be built.
+
 READING RULE
 Each line states the useful behavior learned from the supplied Godot source, then the original C++/Light and Microsoft-native realization. Godot code, engine, scene model, formats, assets, editor structure, and dependencies remain reference material. Named Light functions execute inside the feature on real typed operands; they are never decorative labels. Divinand remains with the complete authored work.
 
@@ -7,13 +13,13 @@ LIVING APPLICATION
 1. Recursive authored formation — one graph can carry conceptual bodies, relations among relations, exact Light expressions, 2D/3D placement, media, time, portals, and further worlds. CORE: `term`, `group`, `compose`, `operad_substitute`, and shared authored routes.
 2. Same work in 2D and 3D — SELFIE `diagonal(work)` can supply the same authored work to paired portrayal coordinates where that exact map is intended; ordinary shared references keep edits unified.
 3. Native application shell — wWinMain, Win32 window class/message loop, DirectX renderer, local recovery opening, and machine acquisition dormant.
-4. Workspaces — MY LIGHT, 2D FRACTAL, 3D FRACTAL, OPERATIONS, TIME/MEDIA, and SYSTEM RELATION are immediate portrayals of one app body.
+4. Workspaces — MY LIGHT, 2D FRACTAL, 3D FRACTAL, OPERATIONS, TIME/MEDIA, and LIGHT TREATMENT are immediate portrayals of one app body.
 5. Docked/floating tools — navigator, inspector, resources, timeline, diagnostics, command palette, and recovery surface with custom C++ docking geometry and Win32 child/secondary windows where useful.
 6. Open-work tabs — local works remain reachable and explicitly reorderable through SHIFTY, CEREMONIES, or FUSING when those operations are chosen.
 7. Navigator — searchable authored graph and immediate-level portrayal; HIERARCHY `covers` derives supplied poset covers and COMMUNITY `concept_close` derives shared-attribute closure.
 8. Inspector — typed geometry, Light operands, expression, purpose, portrayal, media, time, resource, and recovery editors.
 9. Command palette — actual Light callable names and every editor command search through one semantic registry; COMMANDSEA orders a selected action before compatible work.
-10. Local browser/transfer — app-owned local paths, private fragment transfer, deliberate system clipboard export, and OLE local drop with bounded inspection.
+10. Local browser/transfer — application-associated local paths, private fragment transfer, deliberate system clipboard export, and OLE local drop with bounded inspection.
 11. Progress/cancellation — std::jthread/stop_token, explicit work allowances, partial purposeful results, residual expression, and clean release.
 12. DPI/resizing — per-monitor Win32 DPI, DXGI resize, DirectWrite scaling; CHANGELY can operate on a supplied resize sequence while mul/div perform actual scale arithmetic.
 
@@ -80,7 +86,7 @@ RESOURCES, SIGNALS, DIAGNOSTICS, ACCESS, AND PERMANENCE
 64. Typed resources — images, meshes, materials, fonts, media, expressions, and embedded works share original generational handles and RAII.
 65. Shared source/local variation — shared body plus deliberate authored variation; SELFIE diagonal may supply the same operand into paired positions.
 66. Change signals — typed dependency notification wakes only affected portrayals; COMMANDSEA orders change before dependent work and TIMELY schedules dependencies.
-67. Dependency closure — ALLAGE, ORGANIZATIONS, and SAFETY operate on supplied member/partition/reachability bodies; original graph code owns loading.
+67. Dependency closure — ALLAGE, ORGANIZATIONS, and SAFETY operate on supplied member/partition/reachability bodies; original graph code remains associated with loading.
 68. Background local loading — bounded reads, stop tokens, partial portrayals, main-thread GPU upload, no ambient disk scanning.
 69. Import opening — original bounded local parsers for images, media, fonts, geometry, and future formats; reference implementations never enter product code.
 70. Extension opening — PLUGINS `operad_substitute` inserts typed recipes into declared compatible openings; active native extension loading remains a later deliberate capability.

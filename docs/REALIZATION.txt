@@ -1,0 +1,225 @@
+MILESING APPLICATION REALIZATION V0.2
+
+PURPOSE
+MilesingLight is one private native desktop application in which Milesing's
+Light is executable mathematics.  Self numbers designate the operations that
+act on authored work and exact measured wholes.  Win32 and DirectX expose the
+local machine and portray the work; Milesing's Light supplies the named
+mathematical meaning.
+
+ONE NATIVE APPLICATION
+APP.txt compiles the seven authored source bodies as one C++20 translation:
+
+  1. SUPPORT.txt
+  2. SYSTEMLOGS.txt
+  3. 2DFRACTALIZER.txt
+  4. 3DFRACTALIZER.txt
+  5. EDITOR.txt
+  6. RENDERER.txt
+  7. APP.txt
+
+The result is a 64-bit Windows desktop application using Win32, Direct3D 11,
+Direct2D, DirectWrite, BCrypt, and Windows filesystem APIs.  The authored
+source adds no server, account, telemetry, updater, cloud service, socket or
+HTTP client, or public data collection.  File access begins only from a
+deliberately selected path whose root is independently checked as a directly
+attached local volume.  Open and Save As perform admission checks; every save
+revalidates its target immediately before target inspection and writing.  UNC,
+device, unknown-root, remote-volume, and any existing reparse-point component
+are held.  A missing suffix is allowed only after every existing parent proves
+direct and local.  This pathname validation is not handle-relative/no-follow
+race elimination, so residual pathname TOCTOU remains.
+
+SUPPORT.txt also compiles Generated/SELF_NUMBER_BINDINGS.inc.  That generated
+data is an exact application surface of the binding Milesing's Light ledger:
+112 self numbers times ten ordered fields, for 1,120 exact fields.  It remains
+generated data inside the same native application rather than an additional
+application body.
+
+LIGHT MATHEMATICS ALIVE NOW
+
+- The catalog contains 112 self numbers: the original map and the outer LIGHT
+  TREATMENT self number.
+- Each exact binding supplies, in order: SELF NUMBER, Operation, Codable symbol,
+  Mathematical notation, Origin, Operands, Function, Reason, Actual C++ use,
+  and Direct proof.
+- The Direct proof shown for a self number comes directly from its exact binding
+  field.  Finite executor verification is a separately labelled calculation of
+  the implemented operation; an example result is never substituted for the
+  binding proof.
+- All 112 finite executor fixtures invoke their assigned operations through the
+  authored world; their verification count is derived from the live catalog.
+- Authored invocation retains operand values, roles, spatial positions,
+  expression routes, exact results, consumer, and purpose.
+- The live MY LIGHT divinand retains the exact completed LIGHT TREATMENT source
+  whole, its finite operation route, and their measured-bit ancestry.
+- Operation results can feed later operations, so completed graph wholes can
+  participate in recursive derivation.
+
+Miles's originating proof remains Miles's authored work.  The application
+orients to the binding ledger and presents its exact words on the read-only
+Operations sheet; implementation verification remains clearly distinct.
+
+EXACT BINDING SHEET
+In OPERATIONS, B opens the read-only binding sheet for the selected self number.
+The sheet displays all ten exact fields from Generated/SELF_NUMBER_BINDINGS.inc,
+ending with Direct proof.  Arrow keys navigate the 112 self numbers; the mouse
+wheel and Page Up / Page Down scroll; Home and End move to the beginning and end;
+B or Escape returns to operation execution.  Sheet interaction leaves operands,
+expressions, receipts, invocation, and saved work unchanged.
+
+ONE SHARED WORK
+MY LIGHT, 2D FRACTAL, 3D FRACTAL, OPERATIONS, TIME / MEDIA, and LIGHT TREATMENT
+are six portrayals of one authored world.  Pan, zoom, orbit, attention,
+inspection, movement, authored order, relations, and operation receipts remain
+associated with that shared work.  The 2D and 3D workspaces portray the authored
+world; the LIGHT TREATMENT workspace additionally portrays its completed
+derived wholes.  Portrayal never creates completion or knowledge beyond the
+measured sources.
+
+LIGHT TREATMENT ALIVE NOW
+LIGHT TREATMENT measures exact finite windows of the MilesingLight application,
+authored world, explicitly admitted local machine, current process, renderer,
+and explicitly active local workspace file.  Its one-time machine facts include
+native processor shape, physical-memory extents, display geometry, and bounded
+DXGI adapter descriptions and memory extents, with no more than sixteen
+adapters admitted per window.  Measurement samples become
+measured-bit wholes with source, duration, position, typed mathematical views,
+and ancestry.  Light operations derive local graph wholes from them.  Finite
+sheaf gluing then produces one global derived whole exactly when the local
+wholes agree on every shared measured-bit key.
+
+The completed LIGHT TREATMENT RelationValue then becomes the exact typed source
+whole for MY LIGHT.  A separate MeasureWhole canonically encodes the finite unary
+route converse.  DivinandWhole carries the source whole and route into the MY
+LIGHT derived whole, retaining every source bit and every route bit in its exact
+ancestry.  Its completed result can immediately become a typed source for a
+later compatible derivation.
+
+Application launch and local workspace opening create only a deterministic ready
+association.  They capture no machine measurements.  A finite measure window
+begins only through the explicit LIGHT TREATMENT controls below.
+
+The direct gluing proof is constructive: every target key is covered; agreement
+on overlaps makes its value independent of patch choice; restricting the merge
+returns every local whole; and any other whole with the same restrictions must
+agree at every target key.  A disagreement reports its exact key and produces no
+global whole.
+
+LIGHT TREATMENT CONTROLS
+
+  F6       open the LIGHT TREATMENT workspace
+  Q        begin a quick 60-second finite measure window
+  D        begin a deep one-hour finite measure window
+  Enter    begin a quick window when dormant, or complete the live window now
+  Escape   revoke the live window and release its ephemeral raw occurrences
+
+The live status reports acquired occurrences, missed intervals, acquisition
+ticks, and completion for the declared measured domain.  Completion applies
+only to that exact finite domain.  It is not a claim of omniscience.
+
+WORKLOAD AND MACHINE CARE
+Each acquisition records its QueryPerformanceCounter cost.  The adaptive cadence
+targets at most one percent of the sampling interval for measurement work,
+lengthening the interval to at least one hundred times the worst acquisition
+cost observed in the active window.
+Repeated measure families replace their preceding raw occurrence, missed
+intervals remain explicitly missed, and live raw retention is capped at 256
+families and 8 MiB.  Each occurrence selected for direct measured-bit expansion
+is capped at 4096 encoded bytes.  Completed derivations release the raw
+occurrences.
+This permits increasingly rich recursive work while responding to the capacity
+actually measured on the current machine.
+
+THREE MEASURED AXES
+The application keeps three different results distinct.  First, its operation
+body expands losslessly into infinitely many lawful usable finite openings under
+recursive Light operations.  Every admitted finite route retains the exact cause
+and exact route needed for deterministic recalculation, whether or not every
+result has already been portrayed.  Finite hardware evaluates one finite cut at
+a time; that physical fact leaves the recursive family of usable openings
+unbounded.  Second, selected measured-bit ancestry is exact for the bytes used
+by the live completed whole.  Third, recurring external observations are
+temporally coalesced by family, and the live status reports acquired bytes,
+retained latest-family bytes, and their temporal reduction.  Released temporal
+observations belong to that third-axis accounting and do not reduce the first
+axis's retained causes and routes.  The 60-second measurement and evidence-based
+60-minute projection are reported separately for these three axes.
+
+FINAL MEASURED EVIDENCE
+A real 60.005809-second run recorded these separate results:
+
+  Axis 1   n=4096, G=776 bytes, E=706050 bytes, E/G=909.858x;
+           all realized openings were distinct and replayed byte-exactly, and
+           the repeatable-route induction gives infinitely many lawful usable
+           finite openings.
+  Axis 2   S=4445 selected source bytes, B=35560 ancestry bits,
+           B/(8*S)=1.000 exact.
+  Axis 3   A=16618 acquired bytes, R=2391 latest-family bytes,
+           A/R=6.950x.
+
+The evidence-based 60-minute projection is A=875900 bytes and A/R=366.332x.
+It is a projection from the observed recurring payload and cadence.  Canonical
+persistence size C=30657 bytes is retained as a diagnostic only.  The measured
+run, definitions, and complete published result set are recorded directly here.
+
+PRIVATE LOCAL WRITING
+
+- Ctrl+S writes canonical version-2 .mlight work locally; Save As chooses its destination.
+- Ctrl+O opens a canonical .mlight file through a filesystem-only dialog.
+- Dirty work receives a Save / Discard / Cancel decision before replacement.
+- Writing uses preflight validation, a flushed recovery candidate, a protected
+  prior body, SHA-256 verification, semantic reopen, and finite recovery records.
+- Opening validates the catalog, authored world, order, relations, expression
+  routes, operand designations, and replay-derived results before adoption.
+- Original version-1 workspaces retain their original self-number bodies and
+  authored geometry only after all 111 historical NODE self-number /
+  operator-code / origin tuples match the exact published routes.  Each of the
+  eight changed-arity routes validates its exact historical result before
+  deterministic receipt enrichment and current replay.  Every unchanged route
+  requires a serialized result and canonical equality with current replay.
+  Accepted work associates the new LIGHT TREATMENT satellite with REALITY and
+  reserializes as stable canonical version 2.
+- Canonical replay derives operation results from the current Light operations
+  instead of trusting stored result text.
+- Completed LIGHT TREATMENT and MY LIGHT expressions, exact operand
+  designations, results, and applied receipts join the Editor runtime and
+  survive the normal version-2 save and reopen route.  The complete C++
+  DivinandWhole, including its full in-memory graph and bit ancestry, remains a
+  live runtime structure; version 2 records the canonical mathematical work
+  listed above rather than serializing that entire C++ object.
+
+CONSTRUCTIVE VERIFICATION
+The integrated self-test reports nine separate PASS suites:
+
+  1. 112/112 finite executor verifications;
+  2. 112/112 exact authored bindings, covering all 1,120 fields;
+  3. read-only Operations binding-sheet interactions;
+  4. live whole-self derivation through recursively reusable
+     MY LIGHT DivinandWhole(converse);
+  5. authored LIGHT TREATMENT and MY LIGHT association through canonical
+     workspace persistence;
+  6. canonical codec coverage for every Operand body and all 112 fixtures;
+  7. strict version-1 migration covering all historical tuples, eight changed
+     arities, exact enrichment, current replay, stable v2, and rejection cases;
+  8. recoverable local writing; and
+  9. canonical realization through exact Editor restoration and replay-derived
+     results.
+
+PASS strict version-1 migration: 8 changed arities + exact receipt enrichment + current replay + stable v2 + 18 altered-result/arity/presence rejections
+
+Native syntax, linking, and executable verification are rerun together before a
+build is declared ready for publication.
+
+HELLO MILES
+This is one living native program: 112 named mathematical routes, one authored
+world, two spatial portrayals, an executable operation bench, recoverable local
+writing, exact machine associations, and LIGHT TREATMENT turning finite measured
+windows into recursively usable whole selves.  The routes calculate, retain
+ancestry, expose their exact binding proofs, carry the live MY LIGHT divinand,
+and give the next derivation something real to stand on.  Every completed finite
+opening can feed the next one, so finite work participates in an unbounded
+lossless generative body.
+The larger Draw.io, Godot, renderer, accessibility, media, and storage documents
+remain a development concept space; they are not silently counted as finished
+release features here.

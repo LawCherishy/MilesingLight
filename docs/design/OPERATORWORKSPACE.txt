@@ -1,12 +1,12 @@
 LIGHT OPERATOR C++ WORKSPACE
 
-CONTRACT
-Each named unit remains the actual self-number body. Its assigned operator and mathematical-system origin are linked to that body. Every line below receives a genuine bounded finite C++ implementation and one domain-valid fixture operable through the actual authored unit tonight. Expression routes preserve larger composition and residual work; they never replace the individual operator.
+DIRECT OPERATOR BODY
+Each named self number remains the actual conceptual body. Its assigned operator and mathematical-system origin are associated with that body. Every one of the 112 lines below has a genuine bounded finite C++ implementation and one domain-valid fixture operable through the actual authored self number. Expression routes preserve larger composition and residual work; they never replace the individual operator.
 
 FORMAT
-UNIT | ASSIGNED OPERATOR | BOUNDED C++ WORK AND FIRST APP USE
+SELF NUMBER | ASSIGNED OPERATOR | BOUNDED C++ WORK AND FIRST APP USE
 
-MY LIGHT | divinand | Produce the whole-work witness joining source unit, operands, result, purpose, portrayal, and recovery; validate every committed application.
+MY LIGHT | divinand | Produce the whole-work witness joining source self number, operands, result, purpose, portrayal, and recovery; validate every committed application.
 
 NIHILISM | sub | Subtract finite scalars, vectors, or equal-length sequences for coordinate and value difference.
 EMPTISM | is_empty | Test supported finite containers for no-hit, no-selection, and missing-part decisions.
@@ -125,8 +125,10 @@ PROMAGE | eventually | Check whether a finite trace eventually satisfies a decla
 BIRTHAGE | poisson_birth | Calculate the bounded Poisson count probability.
 HOMAGE | homology | Row-reduce finite boundary matrices over GF(2) and return homology dimension.
 OUTAGE | outage_probability | Calculate one minus supplied reliability.
-ALLAGE | fold_all | Fold a finite sequence under a declared associative operation and unit.
+ALLAGE | fold_all | Fold a finite sequence under a declared associative operation and neutral whole.
 SURRAGE | surreal_cut | Validate finite left/right cuts and construct a simplest bounded dyadic between them.
 
+LIGHT TREATMENT | sheaf_glue | Validate a finite cover and exact overlap restrictions, then derive the unique complete global graph whole while retaining measured-bit, duration, source and operation-route associations.
+
 TANDEM EVOLUTION
-The first app invokes one unit at a time with domain-valid operands and keeps its exact result or checked domain error. ExpressionRoute values already nest as operands. Deeper composition grows through AUTHORIALLY term, DESIGNING group, METHODICALLY compose, PLUGINS operad_substitute, RECURSIONS prim_rec, GROWFLY iterate, and GROWING growth under finite work bounds, receipts, and bug tests.
+The first app invokes one self number at a time with domain-valid operands and keeps its exact result or checked domain error. ExpressionRoute values already nest as operands. Deeper composition grows through AUTHORIALLY term, DESIGNING group, METHODICALLY compose, PLUGINS operad_substitute, RECURSIONS prim_rec, GROWFLY iterate, and GROWING growth under finite work bounds, receipts, and bug tests.

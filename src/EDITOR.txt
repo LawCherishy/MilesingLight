@@ -9,12 +9,12 @@ enum class Workspace : std::uint8_t {
     Fractal3D,
     Operations,
     TimeMedia,
-    SystemRelation
+    LightTreatment
 };
 
 inline constexpr std::array<std::string_view, 6> workspace_names{
     "MY LIGHT", "2D FRACTAL", "3D FRACTAL", "OPERATIONS",
-    "TIME / MEDIA", "SYSTEM RELATION"
+    "TIME / MEDIA", "LIGHT TREATMENT"
 };
 
 enum class PointerButton : std::uint8_t { Left, Middle, Right };
@@ -33,11 +33,101 @@ struct EditorLayout {
     RectD bottom{};
 };
 
+inline EditorLayout responsive_editor_layout(RectD client) noexcept {
+    const bool horizontal_workspace_rail = client.width < 760.0;
+    if (horizontal_workspace_rail) {
+        constexpr double top_height = 58.0;
+        constexpr double rail_height = 50.0;
+        constexpr double bottom_height = 60.0;
+        constexpr double inset = 8.0;
+        const double canvas_top = client.y + top_height + rail_height + inset;
+        const double canvas_bottom = client.bottom() - bottom_height - inset;
+        return {
+            {client.x, client.y + top_height, client.width, rail_height},
+            {client.x, client.y, client.width, top_height},
+            {client.x + inset, canvas_top,
+             (std::max)(0.0, client.width - inset * 2.0),
+             (std::max)(0.0, canvas_bottom - canvas_top)},
+            {client.right(), canvas_top, 0.0, (std::max)(0.0, canvas_bottom - canvas_top)},
+            {client.x, client.bottom() - bottom_height, client.width, bottom_height}
+        };
+    }
+
+    const bool compact = client.width < 1120.0;
+    const double rail_width = compact ? 158.0 : 184.0;
+    const double inspector_width = compact ? 232.0 : 304.0;
+    const double top_height = compact || client.height < 680.0 ? 62.0 : 70.0;
+    const double bottom_height = compact || client.height < 680.0 ? 64.0 : 76.0;
+    const double horizontal_inset = compact ? 10.0 : 14.0;
+    const double vertical_inset = compact ? 8.0 : 12.0;
+    const double middle_width = (std::max)(0.0, client.width - rail_width - inspector_width);
+    const double middle_height = (std::max)(0.0, client.height - top_height - bottom_height);
+    return {
+        {client.x, client.y, rail_width, client.height},
+        {client.x + rail_width, client.y, middle_width, top_height},
+        {client.x + rail_width + horizontal_inset, client.y + top_height + vertical_inset,
+         (std::max)(0.0, middle_width - horizontal_inset * 2.0),
+         (std::max)(0.0, middle_height - vertical_inset * 2.0)},
+        {client.right() - inspector_width, client.y + top_height,
+         inspector_width, middle_height},
+        {client.x + rail_width, client.bottom() - bottom_height,
+         middle_width, bottom_height}
+    };
+}
+
+inline bool horizontal_workspace_rail(const EditorLayout& layout) noexcept {
+    return layout.rail.width > layout.rail.height * 2.0;
+}
+
+inline RectD workspace_item_bounds(const EditorLayout& layout, std::size_t index) noexcept {
+    if (horizontal_workspace_rail(layout)) {
+        const double slot = layout.rail.width / static_cast<double>(workspace_names.size());
+        return {layout.rail.x + slot * static_cast<double>(index) + 3.0,
+                layout.rail.y + 6.0, (std::max)(0.0, slot - 6.0),
+                (std::max)(0.0, layout.rail.height - 12.0)};
+    }
+    return {layout.rail.x + 12.0,
+            layout.rail.y + 92.0 + 44.0 * static_cast<double>(index),
+            (std::max)(0.0, layout.rail.width - 24.0), 38.0};
+}
+
 inline constexpr double operations_header_height = 54.0;
 inline constexpr double operations_workbench_gap = 8.0;
 inline constexpr double operations_socket_start = 48.0;
 inline constexpr double operations_socket_height = 20.0;
 inline constexpr double operations_socket_stride = 22.0;
+inline constexpr double operation_binding_header_height = 58.0;
+inline constexpr double operation_binding_padding = 14.0;
+inline constexpr double operation_binding_gap = 8.0;
+
+inline double operation_binding_field_height(std::string_view value,
+                                             double viewport_width) noexcept {
+    const double text_width = (std::max)(120.0, viewport_width - 48.0);
+    const std::size_t characters_per_line = static_cast<std::size_t>(
+        (std::max)(18.0, std::floor(text_width / 7.1)));
+    const std::size_t line_count = (std::max)(std::size_t{1},
+        (value.size() + characters_per_line - 1) / characters_per_line);
+    return (std::max)(64.0,
+        38.0 + 18.0 * static_cast<double>(line_count));
+}
+
+inline double operation_binding_content_height(
+    const SelfNumberDirectFormat& format, RectD viewport) noexcept {
+    double height = operation_binding_padding;
+    for (const std::string_view value : format.ordered_fields()) {
+        height += operation_binding_field_height(value, viewport.width) +
+                  operation_binding_gap;
+    }
+    return height + operation_binding_padding;
+}
+
+inline double operation_binding_max_scroll(
+    const SelfNumberDirectFormat& format, RectD viewport) noexcept {
+    const double visible = (std::max)(1.0,
+        viewport.height - operation_binding_header_height);
+    return (std::max)(0.0,
+        operation_binding_content_height(format, viewport) - visible);
+}
 
 inline double operations_workbench_height(RectD viewport) noexcept {
     const double available = (std::max)(0.0, viewport.height - operations_header_height -
@@ -150,7 +240,7 @@ public:
         drafts_.reserve(light_catalog.size());
         for (std::size_t index = 0; index < light_catalog.size(); ++index) {
             drafts_.push_back(OperationDraft{index,
-                                             operator_fixture(world_, light_catalog[index].unit),
+                                             operator_fixture(world_, light_catalog[index].self_number),
                                              std::nullopt, {}, false, false, 0, {}});
         }
         planar_.arrange_light(world_, 0);
@@ -158,7 +248,8 @@ public:
         drain_fractalizer_receipts();
         if (!world_.nodes.empty()) selection_.push_back(world_.nodes.front().id);
         update_selection_measure();
-        status_ = "111 actual Light bodies share one living planar and spatial work";
+        status_ = std::to_string(light_catalog.size()) +
+                  " Light self numbers share one living planar and spatial work";
     }
 
     AuthoredWorld& world() { return world_; }
@@ -182,11 +273,119 @@ public:
     std::size_t operation_cursor() const { return operation_cursor_; }
     std::span<const OperationDraft> operation_drafts() const { return drafts_; }
     const OperationDraft& active_operation_draft() const { return drafts_.at(operation_cursor_); }
+    SelfNumberDirectFormat active_operation_direct_format() const {
+        return direct_format_for_catalog_index(operation_cursor_);
+    }
+    bool operation_binding_sheet_open() const noexcept {
+        return operation_binding_sheet_open_;
+    }
+    double operation_binding_scroll() const noexcept {
+        return operation_binding_scroll_;
+    }
     std::span<const AppliedOperation> applied_operations() const { return applied_operations_; }
     const std::optional<AppliedOperation>& latest_receipt() const { return latest_receipt_; }
     std::uint64_t discarded_applied_operations() const { return discarded_applied_operations_; }
     const std::array<OperatorCapability, light_catalog.size()>& operation_capabilities() const {
         return operator_capabilities();
+    }
+
+    bool associate_applied_operations(std::span<const AppliedOperation> association,
+                                      std::string& error) {
+        // A producer may calculate directly in this editor's runtime, but its
+        // receipts join the authored workspace only after every route is shown
+        // to designate the exact retained expression, operator body, operands,
+        // and result in this same world/runtime pair.
+        try {
+            if (association.empty()) {
+                error = "the completed association contains no applied Light operations";
+                return false;
+            }
+            if (association.size() > maximum_retained_receipts) {
+                error = "the completed association exceeds the applied-operation retention bound";
+                return false;
+            }
+
+            std::optional<std::size_t> previous_route;
+            for (const AppliedOperation& applied : association) {
+                if (previous_route && applied.expression.value <= *previous_route) {
+                    error = "associated operation routes are duplicated or out of expression order";
+                    return false;
+                }
+                previous_route = applied.expression.value;
+
+                const Expression* expression = runtime_.find(applied.expression);
+                if (!expression) {
+                    error = "an associated operation names an expression route absent from the authored runtime";
+                    return false;
+                }
+                if (applied.catalog_index >= light_catalog.size() ||
+                    expression->catalog_index != applied.catalog_index) {
+                    error = "an associated expression route disagrees with its Light catalog operation";
+                    return false;
+                }
+
+                const WorldNode* operator_body = world_.find(applied.operator_world_node);
+                const WorldNode* expected_body = world_.find_unit(
+                    light_catalog[applied.catalog_index].self_number);
+                if (!operator_body || !expected_body ||
+                    operator_body->id != expected_body->id ||
+                    operator_body->catalog_index != applied.catalog_index) {
+                    error = "an associated operation does not designate its exact operator body in the authored world";
+                    return false;
+                }
+                if (applied.operands.size() != expression->operands.size()) {
+                    error = "an associated operation's designated operand count disagrees with its retained expression";
+                    return false;
+                }
+                for (std::size_t index = 0; index < applied.operands.size(); ++index) {
+                    const OperandDesignation& designation = applied.operands[index];
+                    if (designation.operand_index != index ||
+                        canonical_operand(designation.value) !=
+                            canonical_operand(expression->operands[index])) {
+                        error = "an associated operand position or exact value disagrees with its retained expression";
+                        return false;
+                    }
+                    if (!operand_within_workspace_bounds(designation.value)) {
+                        error = "an associated operand exceeds the authored workspace bounds";
+                        return false;
+                    }
+                    if (designation.authored_node &&
+                        !world_.find(*designation.authored_node)) {
+                        error = "an associated operand designates an absent authored-world body";
+                        return false;
+                    }
+                    if (designation.spatial_position &&
+                        (!canonical_detail::finite_world_number(designation.spatial_position->x) ||
+                         !canonical_detail::finite_world_number(designation.spatial_position->y) ||
+                         !canonical_detail::finite_world_number(designation.spatial_position->z))) {
+                        error = "an associated operand contains a nonfinite spatial position";
+                        return false;
+                    }
+                }
+                if (applied.result.has_value() != expression->value.has_value() ||
+                    (applied.result &&
+                     canonical_operand(*applied.result) !=
+                         canonical_operand(*expression->value))) {
+                    error = "an associated operation result disagrees with its retained expression result";
+                    return false;
+                }
+            }
+
+            // Validation above completes before receipt retention begins. The
+            // common retention path keeps route ordering, updates operation
+            // drafts and the operand well, and applies the established bound.
+            for (const AppliedOperation& applied : association) retain_receipt(applied);
+            status_ = std::to_string(association.size()) +
+                      " completed LIGHT TREATMENT operation" +
+                      (association.size() == 1 ? " is" : "s are") +
+                      " associated with this authored workspace";
+            error.clear();
+            return true;
+        } catch (const std::exception& failure) {
+            error = std::string("completed operation association could not be retained: ") +
+                    failure.what();
+            return false;
+        }
     }
 
     bool restore_workspace(ParsedWorkspace restored, std::string& error) {
@@ -205,7 +404,7 @@ public:
             replacement_drafts.reserve(light_catalog.size());
             for (std::size_t index = 0; index < light_catalog.size(); ++index) {
                 replacement_drafts.push_back(OperationDraft{
-                    index, operator_fixture(restored.world, light_catalog[index].unit),
+                    index, operator_fixture(restored.world, light_catalog[index].self_number),
                     std::nullopt, {}, false, false, 0, {}});
             }
 
@@ -239,7 +438,7 @@ public:
                 // Saved applications are already strictly route-ordered. The
                 // latest valid Spin receipt therefore carries the discrete
                 // turn that the next UNIVERSING command must continue from.
-                if (light_catalog[applied.catalog_index].unit == "UNIVERSING" &&
+                if (light_catalog[applied.catalog_index].self_number == "UNIVERSING" &&
                     applied.operands.size() >= 3) {
                     if (const auto* turn = std::get_if<std::int64_t>(
                             &applied.operands[2].value.body);
@@ -295,22 +494,7 @@ public:
     }
 
     EditorLayout layout(RectD client) const {
-        constexpr double rail_width = 184.0;
-        constexpr double inspector_width = 304.0;
-        constexpr double top_height = 70.0;
-        constexpr double bottom_height = 76.0;
-        const double middle_width = std::max(0.0, client.width - rail_width - inspector_width);
-        const double middle_height = std::max(0.0, client.height - top_height - bottom_height);
-        return {
-            {client.x, client.y, rail_width, client.height},
-            {client.x + rail_width, client.y, middle_width, top_height},
-            {client.x + rail_width + 14.0, client.y + top_height + 12.0,
-             std::max(0.0, middle_width - 28.0), std::max(0.0, middle_height - 24.0)},
-            {client.right() - inspector_width, client.y + top_height,
-             inspector_width, middle_height},
-            {client.x + rail_width, client.bottom() - bottom_height,
-             middle_width, bottom_height}
-        };
+        return responsive_editor_layout(client);
     }
 
     PlanarFrame planar_frame(RectD viewport) {
@@ -344,7 +528,7 @@ public:
         const EditorLayout regions = layout(client);
         if (button == PointerButton::Left && regions.rail.contains(point)) {
             for (std::size_t index = 0; index < workspace_names.size(); ++index) {
-                const RectD item{client.x + 14.0, client.y + 98.0 + 47.0 * index, 156.0, 38.0};
+                const RectD item = workspace_item_bounds(regions, index);
                 if (item.contains(point)) {
                     set_workspace(static_cast<Workspace>(index));
                     return true;
@@ -354,6 +538,10 @@ public:
         if (!regions.canvas.contains(point)) return false;
 
         if (workspace_ == Workspace::Operations && button == PointerButton::Left) {
+            if (operation_binding_sheet_open_) {
+                status_ = "read-only binding sheet; B or Escape returns to operation execution";
+                return true;
+            }
             OperationDraft& draft = drafts_[operation_cursor_];
             if (const auto socket = operation_socket_at(
                     point, regions.canvas, draft.sockets.size())) {
@@ -457,8 +645,12 @@ public:
         const EditorLayout regions = layout(client);
         if (!regions.canvas.contains(point)) return false;
         if (workspace_ == Workspace::Operations) {
-            const int movement = steps > 0.0 ? -11 : 11;
-            set_operation_cursor(static_cast<int>(operation_cursor_) + movement);
+            if (operation_binding_sheet_open_) {
+                scroll_operation_binding(-steps * 72.0, regions.canvas);
+            } else {
+                const int movement = steps > 0.0 ? -11 : 11;
+                set_operation_cursor(static_cast<int>(operation_cursor_) + movement);
+            }
         } else if (spatial_workspace()) {
             spatial_.camera().dolly(steps);
         } else {
@@ -470,8 +662,53 @@ public:
     bool key_down(UINT key, bool control, bool shift, bool alt, RectD client) {
         (void)alt;
         const RectD canvas = layout(client).canvas;
+        if (workspace_ == Workspace::Operations && operation_binding_sheet_open_) {
+            if (control && key == VK_TAB) {
+                const int direction = shift ? -1 : 1;
+                const int count = static_cast<int>(workspace_names.size());
+                const int current = static_cast<int>(workspace_);
+                set_workspace(static_cast<Workspace>((current + direction + count) % count));
+            } else if (key >= VK_F1 && key <= VK_F6) {
+                set_workspace(static_cast<Workspace>(key - VK_F1));
+            } else if (key == VK_LEFT) {
+                set_operation_cursor(static_cast<int>(operation_cursor_) - 11);
+            } else if (key == VK_RIGHT) {
+                set_operation_cursor(static_cast<int>(operation_cursor_) + 11);
+            } else if (key == VK_UP) {
+                set_operation_cursor(static_cast<int>(operation_cursor_) - 1);
+            } else if (key == VK_DOWN) {
+                set_operation_cursor(static_cast<int>(operation_cursor_) + 1);
+            } else if (key == VK_PRIOR) {
+                scroll_operation_binding(-canvas.height * 0.82, canvas);
+            } else if (key == VK_NEXT) {
+                scroll_operation_binding(canvas.height * 0.82, canvas);
+            } else if (key == VK_HOME) {
+                set_operation_binding_scroll(0.0, canvas);
+            } else if (key == VK_END) {
+                set_operation_binding_scroll(
+                    operation_binding_max_scroll(active_operation_direct_format(), canvas),
+                    canvas);
+            } else if (key == 'B' || key == VK_ESCAPE) {
+                close_operation_binding_sheet();
+            } else {
+                // The binding sheet is read-only. In particular, execution,
+                // operand editing, undo/redo, and persistence shortcuts are
+                // never forwarded while this surface has attention.
+                return false;
+            }
+            return true;
+        }
         if (control && key == 'Z') return undo();
         if (control && key == 'Y') return redo();
+        if (control && key == VK_TAB) {
+            const int direction = shift ? -1 : 1;
+            const int count = static_cast<int>(workspace_names.size());
+            const int current = static_cast<int>(workspace_);
+            set_workspace(static_cast<Workspace>((current + direction + count) % count));
+            status_ = std::string(workspace_name()) +
+                      " — keyboard focus; one authored whole, newly portrayed";
+            return true;
+        }
         if (key >= VK_F1 && key <= VK_F6) {
             set_workspace(static_cast<Workspace>(key - VK_F1));
             return true;
@@ -481,6 +718,7 @@ public:
             else if (key == VK_RIGHT) set_operation_cursor(static_cast<int>(operation_cursor_) + 11);
             else if (key == VK_UP) set_operation_cursor(static_cast<int>(operation_cursor_) - 1);
             else if (key == VK_DOWN) set_operation_cursor(static_cast<int>(operation_cursor_) + 1);
+            else if (key == 'B') open_operation_binding_sheet(canvas);
             else if (key == VK_TAB) cycle_active_operation_socket(shift ? -1 : 1);
             else if (key == VK_OEM_PLUS || key == VK_ADD) {
                 adjust_active_operation_operand(control ? 10.0 : 1.0);
@@ -524,9 +762,9 @@ public:
         return false;
     }
 
-    bool invoke_operation(std::string_view unit_or_code) {
-        const LightDefinition* definition = find_light_by_unit(unit_or_code);
-        if (!definition) definition = find_light_by_code(unit_or_code);
+    bool invoke_operation(std::string_view self_number_or_code) {
+        const LightDefinition* definition = find_light_by_self_number(self_number_or_code);
+        if (!definition) definition = find_light_by_code(self_number_or_code);
         if (!definition) {
             status_ = "the requested operation is outside the current Light catalog";
             return false;
@@ -535,33 +773,33 @@ public:
         operation_cursor_ = index;
         const EditorSnapshot before = capture_snapshot();
 
-        if (definition->unit == "UNIVERSING") {
+        if (definition->self_number == "UNIVERSING") {
             ++spin_turn_;
             planar_.arrange_light(world_, spin_turn_);
             spatial_.arrange_light(world_, spin_turn_);
             drain_fractalizer_receipts();
-        } else if (definition->unit == "SPIRALLY") {
+        } else if (definition->self_number == "SPIRALLY") {
             planar_.apply_authored_spiral(world_);
             drain_fractalizer_receipts();
-        } else if (definition->unit == "GIVENS") {
+        } else if (definition->self_number == "GIVENS") {
             if (selection_.empty()) select_single(world_.nodes.front().id);
             planar_.rotate_selection_givens(world_, selection_, pi / 18.0);
             spatial_.rotate_selection_givens(world_, selection_, pi / 18.0);
             drain_fractalizer_receipts();
-        } else if (definition->unit == "FUSING") {
+        } else if (definition->self_number == "FUSING") {
             invoke_authored_order(*definition, false, true);
-        } else if (definition->unit == "SHIFTY") {
+        } else if (definition->self_number == "SHIFTY") {
             invoke_authored_order(*definition, true, false);
-        } else if (definition->unit == "CEREMONIES") {
+        } else if (definition->self_number == "CEREMONIES") {
             invoke_authored_order(*definition, false, false);
-        } else if (definition->unit == "SIZE") {
+        } else if (definition->self_number == "SIZE") {
             update_selection_measure();
         } else {
             if (!invoke_draft(index)) return false;
         }
 
         const EditorSnapshot after = capture_snapshot();
-        if (!same_snapshot(before, after)) push_history(std::string(definition->unit), before, after);
+        if (!same_snapshot(before, after)) push_history(std::string(definition->self_number), before, after);
         if (latest_receipt_ && latest_receipt_->catalog_index == index) {
             OperationDraft& draft = drafts_[index];
             draft.last_expression = latest_receipt_->expression;
@@ -608,7 +846,7 @@ public:
                        [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
         std::vector<const LightDefinition*> result;
         for (const LightDefinition& definition : light_catalog) {
-            std::string haystack = std::string(definition.unit) + " " +
+            std::string haystack = std::string(definition.self_number) + " " +
                                    std::string(definition.code) + " " +
                                    std::string(definition.origin);
             std::transform(haystack.begin(), haystack.end(), haystack.begin(),
@@ -636,6 +874,8 @@ private:
     std::vector<EditorHistoryEntry> history_{};
     std::size_t history_cursor_{};
     std::size_t operation_cursor_{1};
+    double operation_binding_scroll_{};
+    bool operation_binding_sheet_open_{};
     EditorGesture gesture_{};
     std::string status_{};
     std::int64_t spin_turn_{};
@@ -733,7 +973,7 @@ private:
         if (receipt.catalog_index >= drafts_.size()) return;
         OperationDraft& draft = drafts_[receipt.catalog_index];
         if (draft.invoked && draft.last_expression.value > receipt.expression.value) return;
-        const auto defaults = operator_fixture(world_, light_catalog[receipt.catalog_index].unit);
+        const auto defaults = operator_fixture(world_, light_catalog[receipt.catalog_index].self_number);
         bool customized = defaults.size() != receipt.operands.size();
         if (!customized) {
             for (std::size_t socket = 0; socket < defaults.size(); ++socket) {
@@ -797,10 +1037,41 @@ private:
         for (AppliedOperation& receipt : ordered) retain_receipt(std::move(receipt));
     }
 
+    void set_operation_binding_scroll(double requested, RectD viewport) {
+        if (!std::isfinite(requested)) requested = 0.0;
+        const double maximum = operation_binding_max_scroll(
+            active_operation_direct_format(), viewport);
+        operation_binding_scroll_ = std::clamp(requested, 0.0, maximum);
+    }
+
+    void scroll_operation_binding(double delta, RectD viewport) {
+        set_operation_binding_scroll(operation_binding_scroll_ + delta, viewport);
+        status_ = "read-only binding sheet — scroll " +
+                  std::to_string(static_cast<std::uint64_t>(
+                      std::llround(operation_binding_scroll_))) +
+                  " / " + std::to_string(static_cast<std::uint64_t>(
+                      std::llround(operation_binding_max_scroll(
+                          active_operation_direct_format(), viewport))));
+    }
+
+    void open_operation_binding_sheet(RectD viewport) {
+        operation_binding_sheet_open_ = true;
+        set_operation_binding_scroll(0.0, viewport);
+        status_for_operation(operation_cursor_);
+    }
+
+    void close_operation_binding_sheet() {
+        operation_binding_sheet_open_ = false;
+        operation_binding_scroll_ = 0.0;
+        status_for_operation(operation_cursor_);
+    }
+
     void set_operation_cursor(int candidate) {
+        const std::size_t previous = operation_cursor_;
         operation_cursor_ = static_cast<std::size_t>(std::clamp(candidate, 0,
             static_cast<int>(light_catalog.size() - 1)));
-        if (const WorldNode* node = world_.find_unit(light_catalog[operation_cursor_].unit)) {
+        if (operation_cursor_ != previous) operation_binding_scroll_ = 0.0;
+        if (const WorldNode* node = world_.find_unit(light_catalog[operation_cursor_].self_number)) {
             selection_.assign(1, node->id);
         }
         status_for_operation(operation_cursor_);
@@ -808,8 +1079,13 @@ private:
 
     void status_for_operation(std::size_t index) {
         const auto& definition = light_catalog[index];
+        if (operation_binding_sheet_open_) {
+            status_ = std::string(definition.self_number) +
+                      " — exact authored binding; arrows navigate, wheel/pages scroll, B or Escape closes";
+            return;
+        }
         const OperationDraft& draft = drafts_[index];
-        status_ = std::string(definition.unit) + " — " + std::string(definition.signature) +
+        status_ = std::string(definition.self_number) + " — " + std::string(definition.signature) +
                   " — " + std::string(definition.origin) +
                    (!draft.last_error.empty()
                         ? " — " + draft.last_error
@@ -839,7 +1115,7 @@ private:
                     world_, runtime_, "BINARISM",
                     {{0, Operand::truth(current), "current attention membership", id, std::nullopt},
                      {1, Operand::truth(true), "incoming attention toggle", id, std::nullopt}},
-                    "editor attention membership", "toggle one actual authored Light body");
+                    "editor attention membership", "toggle one actual authored Light self number");
                 accept_receipt(std::optional<AppliedOperation>{application.application});
                 const bool include = application.invocation.value
                     ? std::get<bool>(application.invocation.value->body) : !current;
@@ -859,21 +1135,22 @@ private:
         NameList selected_names;
         for (std::size_t id : selection_) {
             if (const WorldNode* node = world_.find(id)) {
-                selected_names.emplace_back(light_catalog[node->catalog_index].unit);
+                selected_names.emplace_back(light_catalog[node->catalog_index].self_number);
             }
         }
         try {
             AuthoredInvocation application = invoke_authored_light(
                 world_, runtime_, "SIZE",
                 {{0, Operand::names(std::move(selected_names)),
-                  "currently attended actual Light names", std::nullopt, std::nullopt}},
+                  "currently attended actual Light self-number names", std::nullopt, std::nullopt}},
                 "editor attention count", "measure the finite current attention set");
             accept_receipt(std::optional<AppliedOperation>{application.application});
             const std::size_t count = application.invocation.value
                 ? static_cast<std::size_t>(application.invocation.value->as_number()) : selection_.size();
-            status_ = std::to_string(count) + " authored Light bod" + (count == 1 ? "y" : "ies") + " attended";
+            status_ = std::to_string(count) + " authored Light self number" +
+                      (count == 1 ? "" : "s") + " attended";
         } catch (const std::exception&) {
-            status_ = std::to_string(selection_.size()) + " authored Light bodies attended";
+            status_ = std::to_string(selection_.size()) + " authored Light self numbers attended";
         }
     }
 
@@ -906,7 +1183,7 @@ private:
 
     void reset_active_operation_draft() {
         OperationDraft& draft = drafts_[operation_cursor_];
-        draft.sockets = operator_fixture(world_, light_catalog[operation_cursor_].unit);
+        draft.sockets = operator_fixture(world_, light_catalog[operation_cursor_].self_number);
         draft.last_result.reset();
         draft.last_expression = {};
         draft.invoked = false;
@@ -1014,7 +1291,7 @@ private:
         const LightDefinition& definition = light_catalog[index];
         try {
             AuthoredInvocation application = invoke_authored_light(
-                world_, runtime_, definition.unit, draft.sockets,
+                world_, runtime_, definition.self_number, draft.sockets,
                 "OPERATIONS workspace result socket",
                 draft.customized
                     ? "execute the selected actual Light operator on edited domain operands"
@@ -1029,7 +1306,7 @@ private:
                 return false;
             }
             draft.last_error.clear();
-            status_ = std::string(definition.unit) +
+            status_ = std::string(definition.self_number) +
                       " produced an exact result through invoke_authored_light";
             return true;
         } catch (const std::exception& error) {
@@ -1043,7 +1320,7 @@ private:
         NameList actual_order;
         actual_order.reserve(world_.authored_order.size());
         for (std::size_t id : world_.authored_order) {
-            if (const WorldNode* node = world_.find(id)) actual_order.emplace_back(light_catalog[node->catalog_index].unit);
+            if (const WorldNode* node = world_.find(id)) actual_order.emplace_back(light_catalog[node->catalog_index].self_number);
         }
         std::vector<OperandDesignation> operands;
         operands.push_back({0, Operand::names(actual_order), "current exact authored order",
@@ -1054,9 +1331,9 @@ private:
                                     std::nullopt, std::nullopt});
         try {
             AuthoredInvocation application = invoke_authored_light(
-                world_, runtime_, definition.unit, std::move(operands),
+                world_, runtime_, definition.self_number, std::move(operands),
                 "shared authored order and both portrayals",
-                "apply the selected order mathematics to the actual Light body order");
+                "apply the selected order mathematics to the actual Light self-number order");
             accept_receipt(std::optional<AppliedOperation>{application.application});
             if (application.invocation.value) {
                 if (const NameList* names = std::get_if<NameList>(&application.invocation.value->body)) {

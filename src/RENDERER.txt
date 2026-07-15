@@ -31,6 +31,7 @@ public:
         width_ = std::max<std::uint32_t>(1, width);
         height_ = std::max<std::uint32_t>(1, height);
         dpi_ = dpi > 0.0f ? dpi : 96.0f;
+        refresh_visual_preferences();
         return create_independent_resources() && create_device_resources() && create_window_resources();
     }
 
@@ -55,10 +56,15 @@ public:
         label_format_.Reset();
         small_format_.Reset();
         mono_format_.Reset();
+        body_format_.Reset();
+        binding_format_.Reset();
+        centered_heading_format_.Reset();
+        centered_small_format_.Reset();
         window_ = nullptr;
     }
 
     bool resize(std::uint32_t width, std::uint32_t height, float dpi) {
+        refresh_visual_preferences();
         if (dpi > 0.0f) {
             dpi_ = dpi;
             if (d2d_context_) d2d_context_->SetDpi(dpi_, dpi_);
@@ -92,6 +98,9 @@ public:
     float dpi() const noexcept { return dpi_; }
     float scale() const noexcept { return dpi_ / 96.0f; }
     bool occluded() const noexcept { return occluded_; }
+    bool high_contrast() const noexcept { return high_contrast_; }
+    bool reduced_motion() const noexcept { return reduced_motion_; }
+    void visual_preferences_changed() noexcept { refresh_visual_preferences(); }
 
     const PortrayalPlan& plan_frame(LightRuntime&, const AuthoredWorld& world,
                                     std::uint64_t cause_revision,
@@ -122,9 +131,9 @@ public:
 
         AuthoredInvocation cardinality_application = invoke_authored_light(
             world, plan_runtime_, "SIZE",
-            {{0, Operand::names(admitted_bodies), "actual admitted authored body names", std::nullopt, std::nullopt}},
-            "renderer visible-body allowance",
-            "bound the visible authored traversal without changing the whole world");
+            {{0, Operand::names(admitted_bodies), "actual admitted authored self-number names", std::nullopt, std::nullopt}},
+            "renderer visible self-number allowance",
+            "bound the visible self-number portrayal without changing the authored whole");
         AuthoredInvocation fairness_application = invoke_authored_light(
             world, plan_runtime_, "FAIRINS",
             {{0, Operand::numbers(pass_allocations), "finite graphics pass allocations", std::nullopt, std::nullopt}},
@@ -172,7 +181,7 @@ public:
         portrayal_.fairness_route = std::move(fairness_application.application);
         portrayal_.dependency_route = std::move(dependency_application.application);
         portrayal_.divinand =
-            "admitted authored bodies + fair finite pass allocation + dependency completion + visible result";
+            "admitted authored self numbers + fair finite pass allocation + dependency completion + visible result";
         planned_revision_ = cause_revision;
         plan_valid_ = true;
         return portrayal_;
@@ -244,7 +253,22 @@ public:
 
     void set_color(ID2D1SolidColorBrush* brush, const Color& color, float opacity = 1.0f) const noexcept {
         if (!brush) return;
-        brush->SetColor(D2D1::ColorF(color.r, color.g, color.b, color.a));
+        Color resolved = color;
+        if (high_contrast_) {
+            if (brush == panel_brush_.Get() || brush == surface_brush_.Get()) {
+                resolved = color_from_system(COLOR_WINDOW);
+            } else if (brush == text_brush_.Get()) {
+                resolved = color_from_system(COLOR_WINDOWTEXT);
+            } else if (brush == text_muted_brush_.Get()) {
+                resolved = color_from_system(COLOR_GRAYTEXT);
+            } else if (brush == accent_brush_.Get()) {
+                resolved = color_from_system(COLOR_HIGHLIGHT);
+            } else if (brush == warm_brush_.Get()) {
+                resolved = color_from_system(COLOR_HOTLIGHT);
+            }
+            opacity = 1.0f;
+        }
+        brush->SetColor(D2D1::ColorF(resolved.r, resolved.g, resolved.b, resolved.a));
         brush->SetOpacity(std::clamp(opacity, 0.0f, 1.0f));
     }
 
@@ -279,7 +303,8 @@ public:
 
     Microsoft::WRL::ComPtr<IDWriteTextFormat> make_text_format(
         float size, DWRITE_FONT_WEIGHT weight = DWRITE_FONT_WEIGHT_NORMAL,
-        DWRITE_TEXT_ALIGNMENT alignment = DWRITE_TEXT_ALIGNMENT_LEADING) const {
+        DWRITE_TEXT_ALIGNMENT alignment = DWRITE_TEXT_ALIGNMENT_LEADING,
+        DWRITE_WORD_WRAPPING wrapping = DWRITE_WORD_WRAPPING_NO_WRAP) const {
         Microsoft::WRL::ComPtr<IDWriteTextFormat> format;
         if (!write_factory_) return format;
         if (FAILED(write_factory_->CreateTextFormat(
@@ -292,7 +317,7 @@ public:
         if (format) {
             format->SetTextAlignment(alignment);
             format->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
-            format->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
+            format->SetWordWrapping(wrapping);
         }
         return format;
     }
@@ -313,21 +338,18 @@ public:
     RectD canvas_bounds(double resize_change = 0.0) const noexcept {
         const D2D1_SIZE_F size = logical_size();
         (void)resize_change;
-        constexpr double left = 184.0;
-        constexpr double right = 304.0;
-        constexpr double top = 70.0;
-        constexpr double bottom = 76.0;
-        return {left + 14.0, top + 12.0,
-                (std::max)(1.0, static_cast<double>(size.width) - left - right - 28.0),
-                (std::max)(1.0, static_cast<double>(size.height) - top - bottom - 24.0)};
+        return responsive_editor_layout(
+            {0.0, 0.0, static_cast<double>(size.width), static_cast<double>(size.height)}).canvas;
     }
 
     std::optional<std::size_t> workspace_at(Vec2 point, double resize_change = 0.0) const noexcept {
-        const double left_width = canvas_bounds(resize_change).x - 14.0;
-        if (point.x < 12.0 || point.x > left_width - 10.0 || point.y < 94.0) return std::nullopt;
+        const D2D1_SIZE_F size = logical_size();
+        const EditorLayout layout = responsive_editor_layout(
+            {0.0, 0.0, static_cast<double>(size.width), static_cast<double>(size.height)});
+        (void)resize_change;
+        if (!layout.rail.contains(point)) return std::nullopt;
         for (std::size_t index = 0; index < workspace_names().size(); ++index) {
-            const RectD item{14.0, 98.0 + static_cast<double>(index) * 47.0,
-                             left_width - 30.0, 38.0};
+            const RectD item = workspace_item_bounds(layout, index);
             if (item.contains(point)) return index;
         }
         return std::nullopt;
@@ -340,10 +362,12 @@ public:
                     double timeline_position) {
         if (!d2d_context_) return;
         const D2D1_SIZE_F size = logical_size();
-        const RectD canvas = canvas_bounds(resize_change);
-        const float left = static_cast<float>(canvas.x - 14.0);
-        const float right = static_cast<float>(canvas.right() + 14.0);
-        const float bottom = static_cast<float>(canvas.bottom() + 12.0);
+        const RectD client{0.0, 0.0, static_cast<double>(size.width),
+                           static_cast<double>(size.height)};
+        const EditorLayout regions = responsive_editor_layout(client);
+        const bool horizontal_rail = horizontal_workspace_rail(regions);
+        const bool compact_inspector = regions.inspector.width > 0.0 &&
+                                       (regions.inspector.width < 270.0 || size.height < 680.0f);
 
         set_color(panel_brush_.Get(), {0.045f, 0.060f, 0.120f, 1.0f}, 0.98f);
         set_color(surface_brush_.Get(), {0.075f, 0.100f, 0.190f, 1.0f}, 0.98f);
@@ -352,146 +376,468 @@ public:
         set_color(warm_brush_.Get(), {1.0f, 0.82f, 0.40f, 1.0f}, 1.0f);
         set_color(accent_brush_.Get(), {0.29f, 0.91f, 0.83f, 1.0f}, 1.0f);
 
-        fill_rect(D2D1::RectF(0.0f, 0.0f, size.width, 70.0f), panel_brush_.Get());
-        fill_rect(D2D1::RectF(0.0f, 70.0f, left, size.height), panel_brush_.Get());
-        fill_rect(D2D1::RectF(right, 70.0f, size.width, size.height), panel_brush_.Get());
-        fill_rect(D2D1::RectF(left, bottom, right, size.height), panel_brush_.Get());
-        const float change_emphasis = static_cast<float>(std::clamp(std::abs(resize_change) / 480.0, 0.0, 1.0));
-        line({0.0f, 69.5f}, {size.width, 69.5f}, warm_brush_.Get(), 1.0f + change_emphasis);
+        fill_rect(D2D1::RectF(0.0f, 0.0f, size.width,
+                              static_cast<float>(regions.top_bar.bottom())),
+                  panel_brush_.Get());
+        fill_rect(to_rect(regions.rail), panel_brush_.Get());
+        if (regions.inspector.width > 0.0) fill_rect(to_rect(regions.inspector), panel_brush_.Get());
+        fill_rect(to_rect(regions.bottom), panel_brush_.Get());
+        const float change_emphasis = reduced_motion_ ? 0.0f :
+            static_cast<float>(std::clamp(std::abs(resize_change) / 480.0, 0.0, 1.0));
+        line({0.0f,
+              static_cast<float>(regions.top_bar.bottom() - 0.5)},
+             {size.width,
+              static_cast<float>(regions.top_bar.bottom() - 0.5)},
+             warm_brush_.Get(), 1.0f + change_emphasis);
 
-        text(L"MY LIGHT", D2D1::RectF(20.0f, 12.0f, left - 10.0f, 56.0f),
+        const float title_left = horizontal_rail ? 18.0f :
+            static_cast<float>(regions.rail.x + 18.0);
+        const float title_right = horizontal_rail ? 166.0f :
+            static_cast<float>(regions.rail.right() - 10.0);
+        text(L"MY LIGHT",
+             D2D1::RectF(title_left, static_cast<float>(regions.top_bar.y + 7.0), title_right,
+                         static_cast<float>(regions.top_bar.bottom() - 6.0)),
              title_format_.Get(), warm_brush_.Get());
-        text(workspace, D2D1::RectF(left + 18.0f, 13.0f, right - 18.0f, 55.0f),
+        const float workspace_left = horizontal_rail ? 178.0f :
+            static_cast<float>(regions.top_bar.x + 18.0);
+        const float workspace_right = horizontal_rail ? size.width - 196.0f :
+            static_cast<float>(regions.top_bar.right() - 18.0);
+        text(workspace,
+             D2D1::RectF(workspace_left, static_cast<float>(regions.top_bar.y + 8.0), workspace_right,
+                         static_cast<float>(regions.top_bar.bottom() - 7.0)),
              heading_format_.Get(), text_brush_.Get());
-        text(L"PRIVATE  ·  OFFLINE  ·  NATIVE", D2D1::RectF(right, 18.0f, size.width - 18.0f, 52.0f),
+        text(L"PRIVATE  ·  OFFLINE  ·  NATIVE",
+             D2D1::RectF(size.width - 188.0f, static_cast<float>(regions.top_bar.y + 8.0),
+                         size.width - 14.0f, static_cast<float>(regions.top_bar.bottom() - 7.0)),
              small_format_.Get(), accent_brush_.Get());
 
-        text(L"ONE WORLD · SIX ENCOUNTERS", D2D1::RectF(14.0f, 72.0f, left - 10.0f, 96.0f),
-             small_format_.Get(), text_muted_brush_.Get());
+        if (!horizontal_rail) {
+            text(L"ONE AUTHORED WHOLE",
+                 D2D1::RectF(static_cast<float>(regions.rail.x + 12.0),
+                             static_cast<float>(regions.rail.y + 62.0),
+                             static_cast<float>(regions.rail.right() - 10.0),
+                             static_cast<float>(regions.rail.y + 88.0)),
+                 small_format_.Get(), text_muted_brush_.Get());
+        }
         const auto names = workspace_names();
         for (std::size_t index = 0; index < names.size(); ++index) {
-            const auto bounds = D2D1::RectF(14.0f, 98.0f + static_cast<float>(index) * 47.0f,
-                                            left - 16.0f, 136.0f + static_cast<float>(index) * 47.0f);
+            const D2D1_RECT_F bounds = to_rect(workspace_item_bounds(regions, index));
             if (index == workspace_index) {
                 set_color(surface_brush_.Get(), {0.13f, 0.18f, 0.33f, 1.0f}, 1.0f);
-                rounded_rect(bounds, 9.0f, surface_brush_.Get(), accent_brush_.Get(), 1.2f);
+                rounded_rect(bounds, 8.0f, surface_brush_.Get(), accent_brush_.Get(),
+                             high_contrast_ ? 2.4f : 1.4f);
             }
             text(names[index], bounds, label_format_.Get(),
                  index == workspace_index ? text_brush_.Get() : text_muted_brush_.Get());
         }
 
-        const float inspector_x = right + 18.0f;
-        text(L"ATTENTION / OPERAND", D2D1::RectF(inspector_x, 82.0f, size.width - 14.0f, 108.0f),
-             label_format_.Get(), warm_brush_.Get());
-        float inspector_y = 112.0f;
-        if (!selection.empty()) {
-            if (const WorldNode* selected = world.find(selection.front());
-                selected && selected->catalog_index < light_catalog.size()) {
-                const LightDefinition& definition = light_catalog[selected->catalog_index];
-                text(utf8_to_wide(definition.unit),
-                     D2D1::RectF(inspector_x, inspector_y, size.width - 14.0f, inspector_y + 26.0f),
-                     heading_format_.Get(), text_brush_.Get());
-                inspector_y += 28.0f;
-                text(utf8_to_wide(std::string(definition.code) + " · " + std::string(definition.origin)),
-                     D2D1::RectF(inspector_x, inspector_y, size.width - 14.0f, inspector_y + 24.0f),
-                     small_format_.Get(), accent_brush_.Get());
-                inspector_y += 24.0f;
-                text(utf8_to_wide(definition.signature),
-                     D2D1::RectF(inspector_x, inspector_y, size.width - 14.0f, inspector_y + 22.0f),
-                     mono_format_.Get(), text_muted_brush_.Get());
+        if (regions.inspector.width > 0.0) {
+            const float inspector_x = static_cast<float>(regions.inspector.x + 14.0);
+            const float inspector_right = static_cast<float>(regions.inspector.right() - 12.0);
+            text(L"ATTENTION / MEASURED WHOLE",
+                 D2D1::RectF(inspector_x, static_cast<float>(regions.inspector.y + 10.0),
+                             inspector_right, static_cast<float>(regions.inspector.y + 36.0)),
+                 label_format_.Get(), warm_brush_.Get());
+            float inspector_y = static_cast<float>(regions.inspector.y + 40.0);
+            if (!selection.empty()) {
+                if (const WorldNode* selected = world.find(selection.front());
+                    selected && selected->catalog_index < light_catalog.size()) {
+                    const LightDefinition& definition = light_catalog[selected->catalog_index];
+                    text(utf8_to_wide(definition.self_number),
+                         D2D1::RectF(inspector_x, inspector_y, inspector_right, inspector_y + 26.0f),
+                         heading_format_.Get(), text_brush_.Get());
+                    inspector_y += 28.0f;
+                    text(utf8_to_wide(std::string(definition.code) + " · " + std::string(definition.origin)),
+                         D2D1::RectF(inspector_x, inspector_y, inspector_right, inspector_y + 22.0f),
+                         small_format_.Get(), accent_brush_.Get());
+                    inspector_y += 22.0f;
+                    text(utf8_to_wide(definition.signature),
+                         D2D1::RectF(inspector_x, inspector_y, inspector_right, inspector_y + 22.0f),
+                         mono_format_.Get(), text_muted_brush_.Get());
+                    inspector_y += 24.0f;
+                }
+            } else {
+                text(L"MY LIGHT · whole authored field",
+                     D2D1::RectF(inspector_x, inspector_y, inspector_right, inspector_y + 26.0f),
+                     label_format_.Get(), text_brush_.Get());
+                inspector_y += 30.0f;
             }
-        } else {
-            text(L"MY LIGHT / whole authored field",
-                 D2D1::RectF(inspector_x, inspector_y, size.width - 14.0f, inspector_y + 26.0f),
-                 label_format_.Get(), text_brush_.Get());
-            inspector_y += 32.0f;
+            inspector_y += 10.0f;
+            text(L"LAWFUL DERIVATION ROUTES",
+                 D2D1::RectF(inspector_x, inspector_y, inspector_right, inspector_y + 24.0f),
+                 label_format_.Get(), warm_brush_.Get());
+            inspector_y += 27.0f;
+            if (compact_inspector) {
+                inspector_y = draw_route_summary(portrayal_.cardinality_route, inspector_x,
+                                                  inspector_y, inspector_right - inspector_x);
+                inspector_y = draw_route_summary(portrayal_.fairness_route, inspector_x,
+                                                  inspector_y, inspector_right - inspector_x);
+                inspector_y = draw_route_summary(portrayal_.dependency_route, inspector_x,
+                                                  inspector_y, inspector_right - inspector_x);
+            } else {
+                inspector_y = draw_route(portrayal_.cardinality_route, inspector_x, inspector_y,
+                                         inspector_right - inspector_x);
+                inspector_y = draw_route(portrayal_.fairness_route, inspector_x, inspector_y,
+                                         inspector_right - inspector_x);
+                inspector_y = draw_route(portrayal_.dependency_route, inspector_x, inspector_y,
+                                         inspector_right - inspector_x);
+            }
+
+            const bool treatment_complete = !system.derived_wholes.empty() &&
+                system.derived_wholes.back().complete_for_declared_measured_domain;
+            text(treatment_complete ? L"LIGHT TREATMENT · DECLARED-DOMAIN WHOLE COMPLETE"
+                                    : L"LIGHT TREATMENT · COMPLETE MEASURED DOMAIN AWAITED",
+                 D2D1::RectF(inspector_x,
+                             static_cast<float>(regions.inspector.bottom() - 30.0),
+                             inspector_right,
+                             static_cast<float>(regions.inspector.bottom() - 6.0)),
+                 small_format_.Get(), treatment_complete ? accent_brush_.Get()
+                                                         : text_muted_brush_.Get());
         }
 
-        inspector_y = (std::max)(inspector_y + 20.0f, 214.0f);
-        text(L"LIVE MATHEMATICAL ROUTES", D2D1::RectF(inspector_x, inspector_y,
-             size.width - 14.0f, inspector_y + 24.0f), label_format_.Get(), warm_brush_.Get());
-        inspector_y += 28.0f;
-        inspector_y = draw_route(portrayal_.cardinality_route, inspector_x, inspector_y,
-                                 size.width - inspector_x - 14.0f);
-        inspector_y = draw_route(portrayal_.fairness_route, inspector_x, inspector_y,
-                                 size.width - inspector_x - 14.0f);
-        inspector_y = draw_route(portrayal_.dependency_route, inspector_x, inspector_y,
-                                 size.width - inspector_x - 14.0f);
-
-        text(system.synthetic ? L"SYSTEM RELATION · SYNTHETIC · LIVE GRANT DORMANT"
-                              : L"SYSTEM RELATION · EXACT GRANT",
-             D2D1::RectF(inspector_x, size.height - 54.0f, size.width - 14.0f, size.height - 26.0f),
-             small_format_.Get(), system.synthetic ? text_muted_brush_.Get() : accent_brush_.Get());
-
-        const float track_left = left + 22.0f;
-        const float track_right = right - 22.0f;
-        const float track_y = bottom + 26.0f;
+        const float track_left = static_cast<float>(regions.bottom.x + 18.0);
+        const float track_right = static_cast<float>(regions.bottom.right() - 18.0);
+        const float track_y = static_cast<float>(regions.bottom.y + 22.0);
         line({track_left, track_y}, {track_right, track_y}, surface_brush_.Get(), 3.0f);
         const float play_x = track_left + static_cast<float>(std::clamp(timeline_position, 0.0, 1.0)) *
                                        (track_right - track_left);
         line({track_left, track_y}, {play_x, track_y}, accent_brush_.Get(), 3.0f);
         circle({play_x, track_y}, 5.0f, warm_brush_.Get());
-        text(status, D2D1::RectF(track_left, bottom + 38.0f, track_right, size.height - 5.0f),
+        text(status, D2D1::RectF(track_left, static_cast<float>(regions.bottom.y + 31.0),
+                                track_right, static_cast<float>(regions.bottom.bottom() - 5.0)),
              small_format_.Get(), text_muted_brush_.Get());
     }
 
-    void draw_system_relation(const RectD& viewport, const SpatialSystemAssociation& association) {
-        if (!d2d_context_) return;
-        const Vec2 center = viewport.center();
-        set_color(surface_brush_.Get(), {0.055f, 0.075f, 0.15f, 1.0f}, 0.94f);
-        rounded_rect(to_rect(viewport), 18.0f, surface_brush_.Get());
-
+    void draw_light_treatment(const RectD& viewport,
+                              const SpatialSystemAssociation& association) {
+        if (!d2d_context_ || viewport.width <= 1.0 || viewport.height <= 1.0) return;
+        set_color(surface_brush_.Get(), {0.045f, 0.065f, 0.135f, 1.0f}, 0.98f);
+        set_color(panel_brush_.Get(), {0.075f, 0.105f, 0.205f, 1.0f}, 0.98f);
         set_color(warm_brush_.Get(), {1.0f, 0.82f, 0.38f, 1.0f}, 1.0f);
-        set_color(accent_brush_.Get(), {0.30f, 0.91f, 0.83f, 1.0f}, 0.88f);
-        circle(to_point(center), 34.0f, warm_brush_.Get(), accent_brush_.Get(), 2.0f);
-        text(association.bit.value ? L"BIT 1" : L"BIT 0",
-             D2D1::RectF(static_cast<float>(center.x - 38.0), static_cast<float>(center.y - 13.0),
-                         static_cast<float>(center.x + 38.0), static_cast<float>(center.y + 13.0)),
-             heading_format_.Get(), panel_brush_.Get());
+        set_color(accent_brush_.Get(), {0.30f, 0.91f, 0.83f, 1.0f}, 0.92f);
+        rounded_rect(to_rect(viewport), 16.0f, surface_brush_.Get(), accent_brush_.Get(), 1.0f);
+        const MeasureWhole* latest_measure = association.measure_wholes.empty()
+            ? nullptr : &association.measure_wholes.back();
+        const DerivedGraphWhole* latest_derived = association.derived_wholes.empty()
+            ? nullptr : &association.derived_wholes.back();
+        const bool declared_domain_complete = latest_derived &&
+            latest_derived->complete_for_declared_measured_domain;
 
-        const std::size_t operand_count = association.operands.size();
-        for (std::size_t index = 0; index < operand_count; ++index) {
-            const double angle = -pi * 0.82 + (operand_count > 1 ?
-                pi * 1.64 * static_cast<double>(index) / static_cast<double>(operand_count - 1) : 0.0);
-            const Vec2 position = center + Vec2{std::cos(angle) * viewport.width * 0.34,
-                                                std::sin(angle) * viewport.height * 0.32};
-            line(to_point(center), to_point(position), accent_brush_.Get(), 1.2f);
-            set_color(surface_brush_.Get(), branch_color(association.operands[index].light_unit), 0.92f);
-            circle(to_point(position), 23.0f, surface_brush_.Get(), accent_brush_.Get(), 1.0f);
-            text(utf8_to_wide(association.operands[index].light_unit),
-                 D2D1::RectF(static_cast<float>(position.x - 66.0), static_cast<float>(position.y - 9.0),
-                             static_cast<float>(position.x + 66.0), static_cast<float>(position.y + 9.0)),
-                 small_format_.Get(), text_brush_.Get());
+        const float left = static_cast<float>(viewport.x + 14.0);
+        const float right = static_cast<float>(viewport.right() - 14.0);
+        const float top = static_cast<float>(viewport.y + 10.0);
+        const float usable_width = (std::max)(1.0f, right - left);
+        text(L"LIGHT TREATMENT · FINITE SHEAF GLUING",
+             D2D1::RectF(left, top, right, top + 24.0f), heading_format_.Get(), warm_brush_.Get());
+        text(L"REALITY → local measured graph wholes → one globally coherent derived whole",
+             D2D1::RectF(left, top + 24.0f, right, top + 44.0f),
+             small_format_.Get(), text_muted_brush_.Get());
+
+        const float gap = 8.0f;
+        const float content_top = top + 50.0f;
+        const float content_bottom = static_cast<float>(viewport.bottom() - 12.0);
+        const float available_height = (std::max)(1.0f, content_bottom - content_top);
+        const float graph_height = std::clamp(available_height * 0.34f, 118.0f, 166.0f);
+        const float route_height = std::clamp(available_height * 0.27f, 94.0f, 126.0f);
+        const D2D1_RECT_F graph_panel = D2D1::RectF(
+            left, content_top, right, content_top + graph_height);
+        const D2D1_RECT_F route_panel = D2D1::RectF(
+            left, graph_panel.bottom + gap, right, graph_panel.bottom + gap + route_height);
+        const D2D1_RECT_F result_panel = D2D1::RectF(
+            left, route_panel.bottom + gap, right, content_bottom);
+        rounded_rect(graph_panel, 10.0f, panel_brush_.Get());
+        rounded_rect(route_panel, 10.0f, panel_brush_.Get());
+        rounded_rect(result_panel, 10.0f, panel_brush_.Get());
+
+        const std::wstring graph_heading = latest_measure && !latest_measure->name.empty()
+            ? L"MEASUREMENT GRAPH WHOLE · " + utf8_to_wide(latest_measure->name)
+            : L"MEASUREMENT GRAPH WHOLE";
+        text(graph_heading,
+             D2D1::RectF(graph_panel.left + 10.0f, graph_panel.top + 6.0f,
+                         graph_panel.right - 10.0f, graph_panel.top + 28.0f),
+             label_format_.Get(), accent_brush_.Get());
+        const auto milliseconds_text = [](std::chrono::milliseconds value) {
+            return std::to_wstring(value.count()) + L" ms";
+        };
+        std::wstring duration_line;
+        if (!latest_measure && association.measure.source.empty()) {
+            duration_line =
+                L"READY · Q 60-second · D one-hour · Enter begin/complete · Esc revoke";
+        } else {
+            duration_line = L"DURATION WHOLE · sample " +
+                milliseconds_text(association.measure.sample_period) + L" · extent " +
+                milliseconds_text(association.measure.duration);
+            if (!association.measure.quantity.empty()) {
+                duration_line += L" · " + utf8_to_wide(association.measure.quantity);
+            }
         }
+        if (latest_measure && latest_measure->duration.valid()) {
+            const double measured_milliseconds =
+                static_cast<double>(latest_measure->duration.tick_extent()) * 1000.0 /
+                static_cast<double>(latest_measure->duration.ticks_per_second);
+            std::wostringstream measured;
+            measured << std::fixed << std::setprecision(3) << measured_milliseconds;
+            duration_line += L" · measured " + measured.str() + L" ms";
+        }
+        text(duration_line,
+             D2D1::RectF(graph_panel.left + 10.0f, graph_panel.top + 27.0f,
+                         graph_panel.right - 10.0f, graph_panel.top + 48.0f),
+             small_format_.Get(), text_muted_brush_.Get());
 
-        float bar_y = static_cast<float>(viewport.bottom() - 92.0);
-        const float bar_left = static_cast<float>(viewport.x + 30.0);
-        const float bar_width = static_cast<float>((std::min)(viewport.width * 0.29, 230.0));
-        for (const HardwareLevel& level : association.levels) {
-            text(utf8_to_wide(system_part_name(level.part)),
-                 D2D1::RectF(bar_left, bar_y, bar_left + 80.0f, bar_y + 16.0f),
+        const float graph_left = graph_panel.left + 18.0f;
+        const float graph_right = graph_panel.right - 18.0f;
+        const float graph_top = graph_panel.top + 55.0f;
+        const float graph_bottom = graph_panel.bottom - 22.0f;
+        line({graph_left, graph_bottom}, {graph_right, graph_bottom},
+             text_muted_brush_.Get(), 1.0f);
+        line({graph_left, graph_top}, {graph_left, graph_bottom},
+             text_muted_brush_.Get(), 1.0f);
+        const std::size_t measure_count = association.levels.size();
+        D2D1_POINT_2F previous{};
+        bool has_previous = false;
+        for (std::size_t index = 0; index < measure_count; ++index) {
+            const HardwareLevel& measure = association.levels[index];
+            const float proportion = measure_count > 1
+                ? static_cast<float>(index) / static_cast<float>(measure_count - 1)
+                : 0.5f;
+            const float value = static_cast<float>(std::clamp(measure.normalized, 0.0, 1.0));
+            const D2D1_POINT_2F point{
+                graph_left + proportion * (graph_right - graph_left),
+                graph_bottom - value * (graph_bottom - graph_top)};
+            if (has_previous) line(previous, point, accent_brush_.Get(), 2.0f);
+            circle(point, 4.5f, warm_brush_.Get(), accent_brush_.Get(), 1.0f);
+            if (measure_count <= 8) {
+                text(milliseconds_text(measure.offset),
+                     D2D1::RectF(point.x - 22.0f, graph_bottom + 2.0f,
+                                 point.x + 32.0f, graph_panel.bottom - 2.0f),
+                     centered_small_format_.Get(), text_muted_brush_.Get());
+            }
+            previous = point;
+            has_previous = true;
+        }
+        if (measure_count == 0) {
+            const std::wstring ready_text = association.purpose.empty()
+                ? L"A declared measure whole will appear here when supplied."
+                : utf8_to_wide(association.purpose);
+            text(ready_text,
+                 D2D1::RectF(graph_left + 8.0f, graph_top, graph_right, graph_bottom),
                  small_format_.Get(), text_muted_brush_.Get());
-            rounded_rect(D2D1::RectF(bar_left + 84.0f, bar_y + 4.0f, bar_left + 84.0f + bar_width,
-                                     bar_y + 12.0f), 4.0f, panel_brush_.Get());
-            rounded_rect(D2D1::RectF(bar_left + 84.0f, bar_y + 4.0f,
-                                     bar_left + 84.0f + bar_width * static_cast<float>(std::clamp(level.normalized, 0.0, 1.0)),
-                                     bar_y + 12.0f), 4.0f, accent_brush_.Get());
-            bar_y += 20.0f;
         }
-        text(L"ONE SPATIAL ASSOCIATION · NO AMBIENT HARDWARE READING",
-             D2D1::RectF(static_cast<float>(viewport.x + 18.0), static_cast<float>(viewport.y + 12.0),
-                         static_cast<float>(viewport.right() - 18.0), static_cast<float>(viewport.y + 42.0)),
+
+        text(L"LAWFUL DERIVATION ROUTE",
+             D2D1::RectF(route_panel.left + 10.0f, route_panel.top + 6.0f,
+                         route_panel.right - 10.0f, route_panel.top + 28.0f),
+             label_format_.Get(), accent_brush_.Get());
+        const std::size_t route_count = association.applied_operations.size();
+        const std::size_t visible_routes = (std::min<std::size_t>)(route_count, 5);
+        const float route_left = route_panel.left + 10.0f;
+        const float route_right = route_panel.right - 10.0f;
+        const float route_y = route_panel.top + 34.0f;
+        if (visible_routes > 0) {
+            const float route_gap = 6.0f;
+            const float route_width = (route_right - route_left -
+                route_gap * static_cast<float>(visible_routes - 1)) /
+                static_cast<float>(visible_routes);
+            for (std::size_t index = 0; index < visible_routes; ++index) {
+                const AppliedOperation& application = association.applied_operations[index];
+                const float x = route_left + static_cast<float>(index) * (route_width + route_gap);
+                const D2D1_RECT_F route_box = D2D1::RectF(
+                    x, route_y, x + route_width, route_y + 32.0f);
+                rounded_rect(route_box, 6.0f, surface_brush_.Get(), accent_brush_.Get(), 0.8f);
+                std::wstring self_number = L"SELF NUMBER";
+                if (application.catalog_index < light_catalog.size()) {
+                    self_number = utf8_to_wide(light_catalog[application.catalog_index].self_number);
+                }
+                text(self_number, route_box, centered_small_format_.Get(), text_brush_.Get());
+                if (index + 1 < visible_routes) {
+                    line({route_box.right, route_box.top + 16.0f},
+                         {route_box.right + route_gap, route_box.top + 16.0f},
+                         warm_brush_.Get(), 1.5f);
+                }
+            }
+        }
+        const AppliedOperation* final_application = route_count > 0
+            ? &association.applied_operations.back() : nullptr;
+        std::wstring equation = L"EQUATION · measured graph whole";
+        if (latest_derived && !latest_derived->equation.empty()) {
+            equation = L"EQUATION · " + utf8_to_wide(latest_derived->equation);
+        } else if (final_application && final_application->catalog_index < light_catalog.size()) {
+            const LightDefinition& definition = light_catalog[final_application->catalog_index];
+            equation += L" → " + utf8_to_wide(definition.code) + L"(...)";
+            equation += final_application->result
+                ? L" = " + operand_summary(*final_application->result)
+                : L" → complete routed expression";
+        }
+        text(equation,
+             D2D1::RectF(route_panel.left + 10.0f, route_panel.bottom - 27.0f,
+                         route_panel.right - 10.0f, route_panel.bottom - 5.0f),
+             mono_format_.Get(), warm_brush_.Get());
+
+        const float split = result_panel.left + (result_panel.right - result_panel.left) * 0.52f;
+        text(L"MEASURED-BIT ANCESTRY",
+             D2D1::RectF(result_panel.left + 10.0f, result_panel.top + 6.0f,
+                         split - 8.0f, result_panel.top + 28.0f),
+             label_format_.Get(), accent_brush_.Get());
+        const std::wstring bit_line = L"graph whole → byte " +
+            std::to_wstring(association.bit.byte_position) + L" · bit " +
+            std::to_wstring(association.bit.bit_position) + L" = " +
+            (association.bit.value ? L"1" : L"0") + L" → operand placements";
+        text(bit_line,
+             D2D1::RectF(result_panel.left + 10.0f, result_panel.top + 29.0f,
+                         split - 8.0f, result_panel.top + 51.0f),
+             small_format_.Get(), text_brush_.Get());
+        std::wstring ancestry_line = L"Every measured bit remains attached to its complete graph whole.";
+        if (latest_derived) {
+            ancestry_line += L" Exact ancestry: " +
+                std::to_wstring(latest_derived->exact_bit_ancestry.size()) + L" bits.";
+        }
+        text(ancestry_line,
+             D2D1::RectF(result_panel.left + 10.0f, result_panel.top + 51.0f,
+                         split - 8.0f, result_panel.bottom - 5.0f),
+             body_format_.Get(), text_muted_brush_.Get());
+
+        line({split, result_panel.top + 8.0f}, {split, result_panel.bottom - 8.0f},
+             surface_brush_.Get(), 1.0f);
+        text(L"DECLARED-DOMAIN WHOLE RESULT",
+             D2D1::RectF(split + 10.0f, result_panel.top + 6.0f,
+                         result_panel.right - 10.0f, result_panel.top + 28.0f),
              label_format_.Get(), warm_brush_.Get());
+        std::wstring result_line;
+        if (declared_domain_complete) {
+            result_line = L"derived whole · complete for its declared measured domain";
+        } else {
+            result_line = L"derivation begins with a completely supplied declared measured domain";
+        }
+        if (latest_derived && !latest_derived->self_number.empty()) {
+            result_line = utf8_to_wide(latest_derived->self_number) + L" · " + result_line;
+        }
+        text(result_line,
+             D2D1::RectF(split + 10.0f, result_panel.top + 29.0f,
+                         result_panel.right - 10.0f, result_panel.top + 51.0f),
+             small_format_.Get(), text_brush_.Get());
+        std::wstring proof_line;
+        if (latest_derived && !latest_derived->direct_proof.empty()) {
+            proof_line = L"PROOF · " + utf8_to_wide(latest_derived->direct_proof) + L"  ";
+        }
+        proof_line += declared_domain_complete
+            ? L"Rendering identifies this completed finite construction; the lawful derivation supplies it. Omniscience is never claimed."
+            : L"Rendering awaits the complete construction and makes no completion claim.";
+        text(proof_line,
+             D2D1::RectF(split + 10.0f, result_panel.top + 51.0f,
+                         result_panel.right - 10.0f, result_panel.bottom - 5.0f),
+             body_format_.Get(), text_muted_brush_.Get());
+        (void)usable_width;
     }
 
     std::optional<std::size_t> operation_at(Vec2 point, const RectD& viewport) const noexcept {
         return operation_catalog_at(point, viewport);
     }
 
+    void draw_operation_binding_sheet(const RectD& viewport,
+                                      const SelfNumberDirectFormat& format,
+                                      double requested_scroll) {
+        if (!d2d_context_ || viewport.width <= 1.0 || viewport.height <= 1.0) return;
+        set_color(surface_brush_.Get(), {0.038f, 0.052f, 0.112f, 1.0f}, 0.99f);
+        set_color(panel_brush_.Get(), {0.072f, 0.098f, 0.190f, 1.0f}, 0.99f);
+        set_color(text_brush_.Get(), {0.96f, 0.97f, 1.0f, 1.0f}, 1.0f);
+        set_color(text_muted_brush_.Get(), {0.62f, 0.69f, 0.86f, 1.0f}, 1.0f);
+        set_color(warm_brush_.Get(), {1.0f, 0.82f, 0.40f, 1.0f}, 1.0f);
+        set_color(accent_brush_.Get(), {0.29f, 0.91f, 0.83f, 1.0f}, 1.0f);
+        rounded_rect(to_rect(viewport), 18.0f, surface_brush_.Get(),
+                     accent_brush_.Get(), 1.0f);
+
+        const float left = static_cast<float>(viewport.x + operation_binding_padding);
+        const float right = static_cast<float>(viewport.right() - operation_binding_padding);
+        const float top = static_cast<float>(viewport.y);
+        const float header_bottom = static_cast<float>(
+            viewport.y + operation_binding_header_height);
+        text(L"EXACT AUTHORED BINDING · " + utf8_to_wide(format.self_number),
+             D2D1::RectF(left, top + 8.0f, right, top + 30.0f),
+             heading_format_.Get(), warm_brush_.Get());
+        text(L"112 entries · 1,120 exact fields · B or Escape closes · arrows navigate · wheel/pages scroll",
+             D2D1::RectF(left, top + 31.0f, right, header_bottom - 5.0f),
+             small_format_.Get(), text_muted_brush_.Get());
+        line({left, header_bottom - 1.0f}, {right, header_bottom - 1.0f},
+             accent_brush_.Get(), 1.0f);
+
+        const D2D1_RECT_F content_clip = D2D1::RectF(
+            static_cast<float>(viewport.x + 2.0), header_bottom,
+            static_cast<float>(viewport.right() - 2.0),
+            static_cast<float>(viewport.bottom() - 2.0));
+        d2d_context_->PushAxisAlignedClip(content_clip,
+                                          D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+        const double maximum_scroll = operation_binding_max_scroll(format, viewport);
+        const double scroll = std::clamp(
+            std::isfinite(requested_scroll) ? requested_scroll : 0.0,
+            0.0, maximum_scroll);
+        double y = viewport.y + operation_binding_header_height +
+                   operation_binding_padding - scroll;
+        const auto fields = format.ordered_fields();
+        for (std::size_t field = 0; field < fields.size(); ++field) {
+            const double height = operation_binding_field_height(
+                fields[field], viewport.width);
+            const RectD card{viewport.x + operation_binding_padding, y,
+                             (std::max)(1.0, viewport.width -
+                                 operation_binding_padding * 2.0), height};
+            if (card.bottom() >= content_clip.top && card.y <= content_clip.bottom) {
+                const bool direct_proof = field == fields.size() - 1;
+                set_color(panel_brush_.Get(),
+                          direct_proof ? Color{0.115f, 0.120f, 0.215f, 1.0f}
+                                       : Color{0.070f, 0.090f, 0.170f, 1.0f},
+                          0.98f);
+                rounded_rect(to_rect(card), 8.0f, panel_brush_.Get(),
+                             direct_proof ? warm_brush_.Get()
+                                          : surface_brush_.Get(),
+                             direct_proof ? 1.2f : 0.6f);
+                const std::wstring label = utf8_to_wide(
+                    generated_self_number_bindings::field_names[field]) + L":";
+                text(label,
+                     D2D1::RectF(static_cast<float>(card.x + 10.0),
+                                 static_cast<float>(card.y + 6.0),
+                                 static_cast<float>(card.right() - 10.0),
+                                 static_cast<float>(card.y + 27.0)),
+                     label_format_.Get(), direct_proof ? warm_brush_.Get()
+                                                       : accent_brush_.Get());
+                text(utf8_to_wide(fields[field]),
+                     D2D1::RectF(static_cast<float>(card.x + 10.0),
+                                 static_cast<float>(card.y + 28.0),
+                                 static_cast<float>(card.right() - 10.0),
+                                 static_cast<float>(card.bottom() - 7.0)),
+                     binding_format_.Get(), text_brush_.Get());
+            }
+            y += height + operation_binding_gap;
+        }
+        d2d_context_->PopAxisAlignedClip();
+
+        if (maximum_scroll > 0.0) {
+            const float track_top = header_bottom + 8.0f;
+            const float track_bottom = static_cast<float>(viewport.bottom() - 10.0);
+            line({right - 2.0f, track_top}, {right - 2.0f, track_bottom},
+                 surface_brush_.Get(), 3.0f);
+            const float visible_fraction = static_cast<float>(std::clamp(
+                (viewport.height - operation_binding_header_height) /
+                    operation_binding_content_height(format, viewport),
+                0.04, 1.0));
+            const float thumb_height = (track_bottom - track_top) * visible_fraction;
+            const float travel = (track_bottom - track_top) - thumb_height;
+            const float thumb_top = track_top + travel *
+                static_cast<float>(scroll / maximum_scroll);
+            line({right - 2.0f, thumb_top},
+                 {right - 2.0f, thumb_top + thumb_height},
+                 warm_brush_.Get(), 3.0f);
+        }
+    }
+
     void draw_operations(const RectD& viewport, const OperationDraft& draft,
+                         bool binding_sheet_open, double binding_scroll,
                          std::size_t retained_receipts,
                          std::uint64_t discarded_receipts) {
         if (!d2d_context_ || draft.catalog_index >= light_catalog.size()) return;
+        if (binding_sheet_open) {
+            draw_operation_binding_sheet(viewport,
+                direct_format_for_catalog_index(draft.catalog_index), binding_scroll);
+            return;
+        }
         set_color(surface_brush_.Get(), {0.055f, 0.075f, 0.15f, 1.0f}, 0.96f);
         rounded_rect(to_rect(viewport), 18.0f, surface_brush_.Get());
 
@@ -505,7 +851,7 @@ public:
         rounded_rect(to_rect(root), 9.0f, panel_brush_.Get(), accent_brush_.Get(),
                      selected_catalog == 0 ? 2.0f : 1.0f);
         text(L"MY LIGHT | divinand | authored whole-system operand",
-             to_rect(root), small_format_.Get(), text_brush_.Get());
+             to_rect(root), centered_small_format_.Get(), text_brush_.Get());
 
         const RectD grid = operations_grid_bounds(viewport);
         const double cell_width = grid.width / 10.0;
@@ -525,7 +871,8 @@ public:
                 rounded_rect(to_rect(cell), 5.0f, panel_brush_.Get(),
                              selected || row == 0 ? accent_brush_.Get() : nullptr,
                              selected ? 1.8f : 0.7f);
-                text(utf8_to_wide(definition.unit), to_rect(cell), small_format_.Get(), text_brush_.Get());
+                text(utf8_to_wide(definition.self_number), to_rect(cell),
+                     centered_small_format_.Get(), text_brush_.Get());
             }
         }
 
@@ -535,8 +882,8 @@ public:
         const float left = static_cast<float>(workbench.x + 12.0);
         const float right = static_cast<float>(workbench.right() - 12.0);
 
-        text(utf8_to_wide(std::string(selected_definition.unit) + " | " +
-                          std::string(selected_definition.code)),
+        text(utf8_to_wide(std::string(selected_definition.self_number) + " | " +
+                          std::string(selected_definition.code) + " | B BINDING"),
              D2D1::RectF(left, static_cast<float>(workbench.y + 7.0), right,
                          static_cast<float>(workbench.y + 27.0)),
              mono_format_.Get(), accent_brush_.Get());
@@ -589,7 +936,7 @@ public:
              small_format_.Get(), warm_brush_.Get());
 
         const std::wstring error_text = draft.last_error.empty()
-            ? L"DOMAIN: typed sockets remain separate from the Light unit identity"
+            ? L"DOMAIN: every typed socket remains attached to its exact operand designation and self number route"
             : L"LATEST ERROR: " + utf8_to_wide(draft.last_error);
         text(error_text,
              D2D1::RectF(left, static_cast<float>(result_y + 18.0), right,
@@ -603,7 +950,7 @@ public:
              D2D1::RectF(left, static_cast<float>(workbench.bottom() - 40.0), right,
                          static_cast<float>(workbench.bottom() - 22.0)),
              small_format_.Get(), discarded_receipts == 0 ? text_muted_brush_.Get() : warm_brush_.Get());
-        text(L"Tab / Shift+Tab socket | +/- bounded typed edit | V compatible result | R reset | Enter / Space execute",
+        text(L"B exact binding | Tab socket | +/- bounded edit | V compatible result | R reset | Enter / Space execute",
              D2D1::RectF(left, static_cast<float>(workbench.bottom() - 22.0), right,
                          static_cast<float>(workbench.bottom() - 4.0)),
              small_format_.Get(), text_brush_.Get());
@@ -704,11 +1051,12 @@ public:
                    portrayal.central ? 2.4f : 1.15f);
 
             if (portrayal.detail != PlanarDetail::Presence) {
-                const std::wstring unit = utf8_to_wide(definition.unit);
+                const std::wstring self_number_label = utf8_to_wide(definition.self_number);
                 const float width = portrayal.main_class || portrayal.central ? 150.0f : 112.0f;
                 const auto bounds = D2D1::RectF(center.x - width * 0.5f, center.y - 9.0f,
                                                 center.x + width * 0.5f, center.y + 9.0f);
-                text(unit, bounds, portrayal.central ? heading_format_.Get() : small_format_.Get(),
+                text(self_number_label, bounds, portrayal.central ? centered_heading_format_.Get()
+                                                     : centered_small_format_.Get(),
                      text_brush_.Get());
             }
             if (portrayal.detail == PlanarDetail::Function && radius >= 18.0f) {
@@ -716,7 +1064,7 @@ public:
                 const auto bounds = D2D1::RectF(center.x - 92.0f, center.y + 8.0f,
                                                 center.x + 92.0f, center.y + 24.0f);
                 set_color(text_muted_brush_.Get(), {0.72f, 0.79f, 0.96f, 1.0f}, 0.88f);
-                text(function, bounds, mono_format_.Get(), text_muted_brush_.Get());
+                text(function, bounds, centered_small_format_.Get(), text_muted_brush_.Get());
             }
         }
 
@@ -725,7 +1073,8 @@ public:
             set_color(panel_brush_.Get(), {0.07f, 0.10f, 0.20f, 1.0f}, 0.88f);
             set_color(accent_brush_.Get(), {0.32f, 0.88f, 1.0f, 1.0f}, 0.72f);
             rounded_rect(portal, 14.0f, panel_brush_.Get(), accent_brush_.Get(), 1.4f);
-            text(L"3D INSIDE 2D  ·  SAME AUTHORED WORLD", portal, small_format_.Get(),
+            text(L"3D INSIDE 2D  ·  SAME AUTHORED WORLD", portal,
+                 centered_small_format_.Get(),
                  text_muted_brush_.Get());
         }
 
@@ -789,8 +1138,9 @@ public:
             if ((portrayal.main_class || portrayal.central || portrayal.selected) && radius >= 8.0f) {
                 const auto bounds = D2D1::RectF(center.x - 78.0f, center.y - 9.0f,
                                                 center.x + 78.0f, center.y + 9.0f);
-                text(utf8_to_wide(definition.unit), bounds,
-                     portrayal.central ? heading_format_.Get() : small_format_.Get(), text_brush_.Get());
+                text(utf8_to_wide(definition.self_number), bounds,
+                     portrayal.central ? centered_heading_format_.Get()
+                                       : centered_small_format_.Get(), text_brush_.Get());
             }
         }
 
@@ -807,7 +1157,7 @@ public:
             text(L"2D INSIDE 3D · SAME WORK",
                  D2D1::RectF(static_cast<float>(label_center.x - 100.0), static_cast<float>(label_center.y - 12.0),
                              static_cast<float>(label_center.x + 100.0), static_cast<float>(label_center.y + 12.0)),
-                 small_format_.Get(), accent_brush_.Get());
+                 centered_small_format_.Get(), accent_brush_.Get());
         }
 
         d2d_context_->PopAxisAlignedClip();
@@ -827,6 +1177,26 @@ private:
                result == DXGI_ERROR_DRIVER_INTERNAL_ERROR;
     }
 
+    static Color color_from_system(int index) noexcept {
+        const COLORREF value = GetSysColor(index);
+        constexpr float channel = 1.0f / 255.0f;
+        return {static_cast<float>(GetRValue(value)) * channel,
+                static_cast<float>(GetGValue(value)) * channel,
+                static_cast<float>(GetBValue(value)) * channel, 1.0f};
+    }
+
+    void refresh_visual_preferences() noexcept {
+        HIGHCONTRASTW contrast{};
+        contrast.cbSize = sizeof(contrast);
+        high_contrast_ = SystemParametersInfoW(
+            SPI_GETHIGHCONTRAST, sizeof(contrast), &contrast, 0) != FALSE &&
+            (contrast.dwFlags & HCF_HIGHCONTRASTON) != 0;
+        BOOL animations = TRUE;
+        if (SystemParametersInfoW(SPI_GETCLIENTAREAANIMATION, 0, &animations, 0) != FALSE) {
+            reduced_motion_ = animations == FALSE;
+        }
+    }
+
     bool create_independent_resources() {
         D2D1_FACTORY_OPTIONS options{};
 #if defined(_DEBUG)
@@ -841,15 +1211,27 @@ private:
             DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory),
             reinterpret_cast<IUnknown**>(write_factory_.GetAddressOf()));
         if (FAILED(result)) return false;
-        title_format_ = make_text_format(25.0f, DWRITE_FONT_WEIGHT_SEMI_BOLD);
-        heading_format_ = make_text_format(15.0f, DWRITE_FONT_WEIGHT_SEMI_BOLD,
-                                           DWRITE_TEXT_ALIGNMENT_CENTER);
-        label_format_ = make_text_format(13.0f, DWRITE_FONT_WEIGHT_MEDIUM);
-        small_format_ = make_text_format(10.5f, DWRITE_FONT_WEIGHT_MEDIUM,
-                                         DWRITE_TEXT_ALIGNMENT_CENTER);
-        mono_format_ = make_text_format(9.5f, DWRITE_FONT_WEIGHT_NORMAL,
-                                        DWRITE_TEXT_ALIGNMENT_CENTER);
-        return title_format_ && heading_format_ && label_format_ && small_format_ && mono_format_;
+        title_format_ = make_text_format(26.0f, DWRITE_FONT_WEIGHT_SEMI_BOLD);
+        heading_format_ = make_text_format(16.0f, DWRITE_FONT_WEIGHT_SEMI_BOLD);
+        label_format_ = make_text_format(13.5f, DWRITE_FONT_WEIGHT_SEMI_BOLD);
+        small_format_ = make_text_format(11.5f, DWRITE_FONT_WEIGHT_MEDIUM);
+        mono_format_ = make_text_format(10.75f, DWRITE_FONT_WEIGHT_NORMAL);
+        body_format_ = make_text_format(11.5f, DWRITE_FONT_WEIGHT_MEDIUM,
+                                        DWRITE_TEXT_ALIGNMENT_LEADING,
+                                        DWRITE_WORD_WRAPPING_WRAP);
+        binding_format_ = make_text_format(12.0f, DWRITE_FONT_WEIGHT_MEDIUM,
+                                           DWRITE_TEXT_ALIGNMENT_LEADING,
+                                           DWRITE_WORD_WRAPPING_WRAP);
+        if (binding_format_) {
+            binding_format_->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_NEAR);
+        }
+        centered_heading_format_ = make_text_format(
+            16.0f, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_TEXT_ALIGNMENT_CENTER);
+        centered_small_format_ = make_text_format(
+            11.0f, DWRITE_FONT_WEIGHT_MEDIUM, DWRITE_TEXT_ALIGNMENT_CENTER);
+        return title_format_ && heading_format_ && label_format_ && small_format_ && mono_format_ &&
+               body_format_ && binding_format_ &&
+               centered_heading_format_ && centered_small_format_;
     }
 
     bool create_device_resources() {
@@ -1002,7 +1384,7 @@ private:
 
     static std::array<std::wstring_view, 6> workspace_names() noexcept {
         return {L"MY LIGHT", L"2D FRACTAL", L"3D FRACTAL", L"OPERATIONS",
-                L"TIME / MEDIA", L"SYSTEM RELATION"};
+                L"TIME / MEDIA", L"LIGHT TREATMENT"};
     }
 
     static std::wstring operand_summary(const Operand& operand) {
@@ -1065,7 +1447,7 @@ private:
             } else if constexpr (std::is_same_v<T, ResourceRoute>) {
                 return L"resource: " + clipped(utf8_to_wide(value.path));
             } else if constexpr (std::is_same_v<T, AuthoredBodyRoute>) {
-                return L"authored body: " + clipped(utf8_to_wide(value.route));
+                return L"authored whole route: " + clipped(utf8_to_wide(value.route));
             } else if constexpr (std::is_same_v<T, TermValue>) {
                 return L"term " + clipped(utf8_to_wide(value.operation)) + L" args=" +
                     std::to_wstring(value.arguments.size());
@@ -1080,7 +1462,7 @@ private:
                 return L"free module " + clipped(utf8_to_wide(value.ring)) + L" rank=" +
                     std::to_wstring(value.basis.size());
             } else if constexpr (std::is_same_v<T, DivinandValue>) {
-                return L"divinand units=" + std::to_wstring(value.units.size()) + L" operators=" +
+                return L"divinand self numbers=" + std::to_wstring(value.units.size()) + L" operators=" +
                     std::to_wstring(value.assigned_operators.size()) + L" extent=" +
                     std::to_wstring(value.catalog_extent);
             } else if constexpr (std::is_same_v<T, ExpressionRoute>) {
@@ -1090,11 +1472,26 @@ private:
         }, operand.body);
     }
 
+    float draw_route_summary(const AppliedOperation& route,
+                             float x, float y, float width) {
+        if (route.operator_world_node == no_node || route.catalog_index >= light_catalog.size()) return y;
+        const LightDefinition& definition = light_catalog[route.catalog_index];
+        text(utf8_to_wide(std::string(definition.self_number) + " · " + std::string(definition.code)),
+             D2D1::RectF(x, y, x + width, y + 18.0f),
+             small_format_.Get(), accent_brush_.Get());
+        const std::wstring result = route.result
+            ? L"derived whole: " + operand_summary(*route.result)
+            : L"declared-domain route retained";
+        text(result, D2D1::RectF(x, y + 18.0f, x + width, y + 36.0f),
+             small_format_.Get(), route.result ? warm_brush_.Get() : text_muted_brush_.Get());
+        return y + 42.0f;
+    }
+
     float draw_route(const AppliedOperation& route,
                      float x, float y, float width) {
         if (route.operator_world_node == no_node || route.catalog_index >= light_catalog.size()) return y;
         const LightDefinition& definition = light_catalog[route.catalog_index];
-        const std::wstring heading = utf8_to_wide(std::string(definition.unit) + " → " +
+        const std::wstring heading = utf8_to_wide(std::string(definition.self_number) + " → " +
                                                    std::string(definition.code));
         text(heading, D2D1::RectF(x, y, x + width, y + 18.0f), mono_format_.Get(), accent_brush_.Get());
         y += 18.0f;
@@ -1128,6 +1525,8 @@ private:
     bool occluded_{};
     bool drawing_{};
     bool plan_valid_{};
+    bool high_contrast_{};
+    bool reduced_motion_{};
     std::uint64_t planned_revision_{};
     PortrayalPlan portrayal_{};
     LightRuntime plan_runtime_{8};
@@ -1139,6 +1538,10 @@ private:
     Microsoft::WRL::ComPtr<IDWriteTextFormat> label_format_;
     Microsoft::WRL::ComPtr<IDWriteTextFormat> small_format_;
     Microsoft::WRL::ComPtr<IDWriteTextFormat> mono_format_;
+    Microsoft::WRL::ComPtr<IDWriteTextFormat> body_format_;
+    Microsoft::WRL::ComPtr<IDWriteTextFormat> binding_format_;
+    Microsoft::WRL::ComPtr<IDWriteTextFormat> centered_heading_format_;
+    Microsoft::WRL::ComPtr<IDWriteTextFormat> centered_small_format_;
     Microsoft::WRL::ComPtr<ID3D11Device> d3d_device_;
     Microsoft::WRL::ComPtr<ID3D11DeviceContext> d3d_context_;
     Microsoft::WRL::ComPtr<IDXGISwapChain1> swap_chain_;

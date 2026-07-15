@@ -1,5 +1,11 @@
 DRAW.IO CONCEPT SPACE REBUILT AS ORIGINAL MILESING C++20
 
+STATUS
+This is a concept-derived feature map, not a release checklist.  It neither
+copies Draw.io source nor claims that every mapped editor feature is present in
+v0.2.  REALIZATION.txt and executable verification identify the live subset;
+the remaining lines designate original Milesing C++ work to be implemented.
+
 READING RULE
 Each line is a feature we understand from the supplied Draw.io source, followed by the original application behavior and the direct code it requires. Reference source, formats, assets, interface, names, and architecture stay in References. Every Light function named below runs inside the same C++ feature on its real typed operands. Where no current Light function fits, the feature uses ordinary original C++ mathematics. Divinand remains with the complete authored work and result.
 
@@ -11,7 +17,7 @@ IMAGE = WIC deliberate local image decode/encode.
 ACCESS = native UI Automation provider over the same semantic commands and authored world.
 
 LIGHT AND AUTHORED WORK
-1. Executable Light expression — Type or graphically compose any actual callable, supply operands, inspect the domain, calculate a finite result, retain a symbolic recipe, and use the result again. CORE: canonical 111-entry registry, typed dispatch, expression arena, work allowance. DRAW: structured formula and graph portrayal.
+1. Executable Light expression — Type or graphically compose any actual callable, supply operands, inspect the domain, calculate a finite result, retain a symbolic recipe, and use the result again. CORE: canonical 112-self-number registry, typed dispatch, expression arena, work allowance. DRAW: structured formula and graph portrayal.
 2. Graphical operands — Values, functions, results, conceptual bodies, worlds, map positions, and later granted measures appear as editable operands. AUTHORIALLY `term`, DESIGNING `group`, METHODICALLY `compose`, and COMMANDSEA `action_prefix` execute inside the expression/editor code.
 3. Recursive work placement — Place a complete editable work inside another work and later inside 3D. CORE stores one shared authored body and portal relation; DRAW renders requested detail into a nested target.
 4. Actual Light arrangement — UNIVERSING `spin` turns the actual central classes and organizes them around actual subclass relations. It remains distinct from generic circle/radial layout.

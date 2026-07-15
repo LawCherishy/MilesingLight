@@ -1,5 +1,11 @@
 WINDOWS IMAGING COMPONENT CONCEPT SPACE
 
+STATUS
+This is the deliberate local-image target.  WIC is an admitted native dependency
+and factory opening, while full bounded decode, metadata preview, authored image
+editing and export remain development work until the corresponding source path
+and executable checks exist.
+
 PURPOSE
 WIC gives deliberate local image opening and original generated-image output to the same authored world.
 
@@ -9,7 +15,7 @@ FEATURE TO DIRECT CODE
 - Ask WIC for an explicit decoder; receipt the exact container and component used.
 - Read frame count, dimensions, pixel format, color context, orientation, and metadata before allocating full pixels.
 - Apply orientation and color conversion explicitly.
-- Convert portrayal surfaces to a renderer-owned pixel format such as premultiplied BGRA.
+- Convert portrayal surfaces to a renderer-associated pixel format such as premultiplied BGRA.
 - Decode only requested frames and requested scale; release decoder and bitmap resources after use.
 - Preserve the chosen source relation and authored crop/transform separately from decoded pixels.
 - Generate thumbnails and previews inside declared dimensions and byte ceilings.

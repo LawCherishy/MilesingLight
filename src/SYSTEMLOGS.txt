@@ -5,7 +5,19 @@
 #error SUPPORT.txt must be included before SYSTEMLOGS.txt
 #endif
 
+#include <psapi.h>
+
 namespace milesing {
+
+// SYSTEMLOGS contains no ambient logger.  It reads only the running application,
+// its authored graph whole, its explicitly named local workspace file, and the
+// current Milesing process.  Every reading is a finite measure whole whose
+// exact bytes remain addressable down to one bit.
+
+inline constexpr std::size_t maximum_retained_measure_bytes =
+    8ull * 1024ull * 1024ull;
+inline constexpr std::size_t maximum_retained_measure_families = 256;
+inline constexpr std::size_t maximum_direct_derived_measure_bytes = 4096;
 
 enum class SystemPart {
     processor,
@@ -28,7 +40,28 @@ inline std::string_view system_part_name(SystemPart part) noexcept {
     return "unknown";
 }
 
-struct MeasureContract {
+enum class MeasureSource : std::uint8_t {
+    application,
+    workspace,
+    active_file,
+    current_process,
+    machine,
+    derived_whole
+};
+
+inline std::string_view measure_source_name(MeasureSource source) noexcept {
+    switch (source) {
+    case MeasureSource::application: return "Milesing application";
+    case MeasureSource::workspace: return "authored graph whole";
+    case MeasureSource::active_file: return "explicit active workspace file";
+    case MeasureSource::current_process: return "current Milesing process";
+    case MeasureSource::machine: return "explicitly admitted local machine";
+    case MeasureSource::derived_whole: return "derived whole";
+    }
+    return "unknown source";
+}
+
+struct MeasureWholeRequest {
     std::string source;
     std::string quantity;
     std::string unit;
@@ -37,7 +70,53 @@ struct MeasureContract {
     std::chrono::milliseconds retention{0};
     std::string expression_code;
     std::string operand_role;
-    bool exact_grant{};
+    bool exact_source{};
+};
+
+struct MeasureWindowEvidence {
+    DurationWhole duration;
+    std::chrono::milliseconds declared_duration{};
+    std::chrono::milliseconds declared_sample_period{};
+    std::chrono::milliseconds completed_duration{};
+    std::uint64_t qpc_frequency{};
+    std::int64_t opened_tick{};
+    std::int64_t completed_tick{};
+    std::uint64_t acquired_occurrences{};
+    std::uint64_t missed_occurrences{};
+    std::uint64_t acquisition_ticks{};
+    std::uint64_t peak_acquisition_ticks{};
+    std::uint64_t acquired_encoded_bytes{};
+    std::uint64_t first_occurrence_encoded_bytes{};
+    std::uint64_t latest_occurrence_encoded_bytes{};
+    std::uint64_t peak_occurrence_encoded_bytes{};
+    std::uint64_t effective_sample_period_ticks{};
+    std::uint64_t retained_encoded_bytes{};
+    std::uint32_t retained_measure_families{};
+    std::uint64_t maximum_retained_encoded_bytes{maximum_retained_measure_bytes};
+    std::uint32_t maximum_retained_measure_families{
+        static_cast<std::uint32_t>(milesing::maximum_retained_measure_families)};
+    std::uint64_t maximum_direct_derived_encoded_bytes{
+        maximum_direct_derived_measure_bytes};
+    std::uint32_t maximum_measure_work_ppm{10000};
+    bool retained_byte_count_exact{};
+    bool complete_for_declared_measured_domain{};
+};
+
+struct AppMeasureSample {
+    std::string self_number;
+    MeasureSource source{MeasureSource::application};
+    std::string quantity;
+    std::string unit;
+    std::string lineage;
+    std::string graph_whole;
+    std::chrono::milliseconds offset{};
+    std::uint64_t source_revision{};
+    Operand typed_view{};
+    std::string exact_encoding;
+    std::uint64_t address_byte{};
+    std::uint64_t bit_extent{};
+    bool exact{};
+    DurationWhole occurrence_duration;
 };
 
 struct BitOccurrence {
@@ -45,177 +124,1611 @@ struct BitOccurrence {
     std::uint8_t bit_position{};
     bool value{};
     Vec3 spatial_position{};
+    std::string self_number;
+    std::string graph_whole;
+    std::uint64_t bit_extent{};
 };
 
 struct OperandPlacement {
+    // light_unit is retained as an ABI/source-compatible field name.  Its
+    // value is always an exact Light self number.
     std::string light_unit;
     std::string function_code;
     std::size_t operand_position{};
     std::string role;
     Vec3 spatial_position{};
+    std::string measure_self_number;
+    std::string graph_whole;
 };
 
 struct HardwareLevel {
     SystemPart part{SystemPart::processor};
-    double normalized{};
-    std::string unit{"synthetic ratio"};
+    double normalized{}; // portrayal only; exact value remains in a measure whole
+    std::string unit{"ratio"};
     std::chrono::milliseconds offset{};
+    std::string self_number;
+    std::string quantity;
+    std::string exact_encoding;
 };
 
 struct SpatialSystemAssociation {
     BitOccurrence bit;
+    // light_units is retained as an ABI/source-compatible field name.  These
+    // strings are exact Light self numbers, never numerical labels.
     std::vector<std::string> light_units;
     std::vector<OperandPlacement> operands;
     std::vector<HardwareLevel> levels;
     std::vector<ExpressionRoute> calculation_routes;
     std::vector<AppliedOperation> applied_operations;
+    std::vector<MeasureWhole> measure_wholes;
+    std::vector<DerivedGraphWhole> derived_wholes;
+    std::optional<DivinandWhole> divinand_whole;
+    std::vector<DurationWhole> duration_wholes;
+    std::vector<MeasureWindowEvidence> window_evidence;
     ExpressionRoute rooted_expression{};
-    MeasureContract contract;
+    MeasureWholeRequest measure;
     std::string purpose;
     std::string divinand;
-    bool synthetic{true};
+};
+
+namespace system_measure_detail {
+
+inline std::uint64_t filetime_value(FILETIME value) noexcept {
+    return (static_cast<std::uint64_t>(value.dwHighDateTime) << 32) |
+           static_cast<std::uint64_t>(value.dwLowDateTime);
+}
+
+inline std::int64_t qpc_now() noexcept {
+    LARGE_INTEGER value{};
+    return QueryPerformanceCounter(&value) ? value.QuadPart : 0;
+}
+
+inline std::uint64_t qpc_frequency() noexcept {
+    LARGE_INTEGER value{};
+    return QueryPerformanceFrequency(&value) && value.QuadPart > 0
+        ? static_cast<std::uint64_t>(value.QuadPart) : 1;
+}
+
+template <typename Unsigned>
+inline constexpr Unsigned saturating_unsigned_add(Unsigned left,
+                                                   Unsigned right) noexcept {
+    static_assert(std::is_unsigned_v<Unsigned>);
+    constexpr Unsigned maximum = (std::numeric_limits<Unsigned>::max)();
+    return left > maximum - right ? maximum : static_cast<Unsigned>(left + right);
+}
+
+inline std::uint64_t nonnegative_tick_span(std::int64_t later,
+                                           std::int64_t earlier) noexcept {
+    const std::uint64_t bounded_later = later > 0
+        ? static_cast<std::uint64_t>(later) : 0;
+    const std::uint64_t bounded_earlier = earlier > 0
+        ? static_cast<std::uint64_t>(earlier) : 0;
+    return bounded_later >= bounded_earlier
+        ? bounded_later - bounded_earlier : 0;
+}
+
+inline std::int64_t saturating_tick_add(std::int64_t tick,
+                                        std::uint64_t delta) noexcept {
+    const std::int64_t bounded_tick = (std::max)(std::int64_t{0}, tick);
+    constexpr std::int64_t maximum = (std::numeric_limits<std::int64_t>::max)();
+    const std::uint64_t room = static_cast<std::uint64_t>(maximum - bounded_tick);
+    return delta > room ? maximum
+                        : bounded_tick + static_cast<std::int64_t>(delta);
+}
+
+inline std::uint64_t milliseconds_to_ticks(std::chrono::milliseconds value,
+                                           std::uint64_t frequency) noexcept {
+    if (value <= std::chrono::milliseconds::zero()) return 1;
+    const auto milliseconds = static_cast<std::uint64_t>(value.count());
+    if (milliseconds > (std::numeric_limits<std::uint64_t>::max)() /
+                           (std::max)(std::uint64_t{1}, frequency)) {
+        return (std::numeric_limits<std::uint64_t>::max)();
+    }
+    return (std::max)(std::uint64_t{1}, milliseconds * frequency / 1000);
+}
+
+inline std::chrono::milliseconds ticks_to_milliseconds(std::uint64_t ticks,
+                                                        std::uint64_t frequency) noexcept {
+    if (frequency == 0) return {};
+    const long double milliseconds = static_cast<long double>(ticks) * 1000.0L /
+                                     static_cast<long double>(frequency);
+    const long double bounded = (std::min)(milliseconds,
+        static_cast<long double>((std::numeric_limits<std::int64_t>::max)()));
+    return std::chrono::milliseconds{static_cast<std::int64_t>(bounded)};
+}
+
+inline std::uint64_t stable_address(std::string_view value) noexcept {
+    std::uint64_t hash = 1469598103934665603ull;
+    for (const unsigned char byte : value) {
+        hash ^= byte;
+        hash *= 1099511628211ull;
+    }
+    return hash;
+}
+
+inline std::optional<double> numeric_view(const AppMeasureSample& whole) noexcept {
+    if (const auto* value = std::get_if<double>(&whole.typed_view.body)) return *value;
+    if (const auto* value = std::get_if<std::int64_t>(&whole.typed_view.body)) {
+        return static_cast<double>(*value);
+    }
+    if (const auto* value = std::get_if<bool>(&whole.typed_view.body)) return *value ? 1.0 : 0.0;
+    return std::nullopt;
+}
+
+inline WholeViewKind whole_view_kind(const Operand& value) noexcept {
+    if (std::holds_alternative<bool>(value.body)) return WholeViewKind::truth;
+    if (std::holds_alternative<std::int64_t>(value.body)) return WholeViewKind::integer;
+    if (std::holds_alternative<double>(value.body)) return WholeViewKind::real_scalar;
+    if (std::holds_alternative<NumberList>(value.body)) return WholeViewKind::real_sequence;
+    if (std::holds_alternative<NameList>(value.body)) return WholeViewKind::names;
+    if (std::holds_alternative<Matrix>(value.body)) return WholeViewKind::matrix;
+    if (std::holds_alternative<RelationValue>(value.body)) return WholeViewKind::relation;
+    if (std::holds_alternative<GraphValue>(value.body)) return WholeViewKind::graph;
+    if (std::holds_alternative<ProbabilityValue>(value.body)) return WholeViewKind::probability;
+    if (std::holds_alternative<TimeValue>(value.body)) return WholeViewKind::time;
+    return WholeViewKind::term;
+}
+
+inline AppMeasureSample make_whole(std::string self_number, MeasureSource source,
+                               std::string quantity, std::string unit,
+                               Operand typed_view, std::chrono::milliseconds offset,
+                               std::uint64_t source_revision, std::string lineage,
+                               bool exact = true) {
+    AppMeasureSample whole;
+    whole.self_number = std::move(self_number);
+    whole.source = source;
+    whole.quantity = std::move(quantity);
+    whole.unit = std::move(unit);
+    whole.lineage = std::move(lineage);
+    whole.offset = offset;
+    whole.source_revision = source_revision;
+    whole.typed_view = std::move(typed_view);
+    whole.graph_whole = "MY LIGHT > LIGHT TREATMENT > " +
+        std::string(measure_source_name(source)) + " > " + whole.quantity +
+        " > " + std::to_string(offset.count()) + " ms > field/operand > byte > bit";
+    whole.exact_encoding = canonical_operand(whole.typed_view);
+    whole.address_byte = stable_address(whole.graph_whole);
+    whole.bit_extent = whole.exact_encoding.size() >
+            (std::numeric_limits<std::uint64_t>::max)() / 8ull
+        ? (std::numeric_limits<std::uint64_t>::max)()
+        : static_cast<std::uint64_t>(whole.exact_encoding.size()) * 8ull;
+    whole.exact = exact;
+    const auto tick = static_cast<std::uint64_t>((std::max)(std::int64_t{0}, qpc_now()));
+    whole.occurrence_duration = DurationWhole{tick, tick, qpc_frequency(),
+                                              "QueryPerformanceCounter"};
+    return whole;
+}
+
+inline MeasureWhole core_measure_whole(const AppMeasureSample& sample) {
+    std::vector<std::uint8_t> exact_bytes;
+    exact_bytes.reserve(sample.exact_encoding.size());
+    for (const unsigned char byte : sample.exact_encoding) exact_bytes.push_back(byte);
+    const std::string whole_name = sample.self_number + " @ " +
+        std::to_string(sample.offset.count()) + " ms";
+    return form_measure_whole(
+        whole_name, std::string(measure_source_name(sample.source)), sample.quantity,
+        sample.unit,
+        "finite occurrence of " + std::string(measure_source_name(sample.source)) +
+            " / " + sample.quantity,
+        sample.occurrence_duration, std::move(exact_bytes), {}, 1.0,
+        static_cast<std::uint64_t>((std::max)(std::int64_t{0}, sample.offset.count())));
+}
+
+inline TypedWholeView core_whole_view(const AppMeasureSample& sample,
+                                      const MeasureWhole& whole) {
+    return form_typed_whole_view(
+        whole.name + " typed view", whole, whole_view_kind(sample.typed_view),
+        "direct technical view of exact measured-bit ancestry",
+        sample.quantity + " in " + sample.unit, sample.typed_view,
+        whole.measurement_graph);
+}
+
+inline std::size_t encoded_sample_bytes(
+        const std::vector<AppMeasureSample>& sample) noexcept {
+    std::size_t bytes{};
+    for (const AppMeasureSample& whole : sample) {
+        bytes = saturating_unsigned_add(bytes, whole.exact_encoding.size());
+    }
+    return bytes;
+}
+
+struct CurrentProcessFacts {
+    bool times_available{};
+    bool memory_available{};
+    bool io_available{};
+    bool handles_available{};
+    bool cycles_available{};
+    bool gdi_available{};
+    bool user_available{};
+    std::uint64_t creation_100ns{};
+    std::uint64_t kernel_100ns{};
+    std::uint64_t user_100ns{};
+    std::uint64_t cycles{};
+    std::uint64_t page_faults{};
+    std::uint64_t working_set_bytes{};
+    std::uint64_t peak_working_set_bytes{};
+    std::uint64_t private_committed_bytes{};
+    std::uint64_t peak_committed_bytes{};
+    std::uint64_t paged_pool_bytes{};
+    std::uint64_t peak_paged_pool_bytes{};
+    std::uint64_t nonpaged_pool_bytes{};
+    std::uint64_t peak_nonpaged_pool_bytes{};
+    std::uint64_t read_operations{};
+    std::uint64_t write_operations{};
+    std::uint64_t other_operations{};
+    std::uint64_t read_bytes{};
+    std::uint64_t write_bytes{};
+    std::uint64_t other_bytes{};
+    std::uint64_t handles{};
+    std::uint64_t gdi_objects{};
+    std::uint64_t user_objects{};
+};
+
+struct GraphicsAdapterFacts {
+    std::string description;
+    std::uint64_t dedicated_video_bytes{};
+    std::uint64_t dedicated_system_bytes{};
+    std::uint64_t shared_system_bytes{};
+    std::uint32_t vendor_id{};
+    std::uint32_t device_id{};
+    bool software{};
+};
+
+struct LocalMachineFacts {
+    std::uint16_t processor_architecture{};
+    std::uint32_t logical_processors{};
+    std::uint32_t processor_level{};
+    std::uint32_t processor_revision{};
+    std::uint32_t page_bytes{};
+    std::uint32_t allocation_granularity_bytes{};
+    bool memory_available{};
+    std::uint64_t physical_total_bytes{};
+    std::uint64_t physical_available_bytes{};
+    std::uint64_t pagefile_total_bytes{};
+    std::uint64_t pagefile_available_bytes{};
+    std::uint64_t virtual_total_bytes{};
+    std::uint64_t virtual_available_bytes{};
+    std::int32_t primary_display_width{};
+    std::int32_t primary_display_height{};
+    std::uint32_t system_dpi{};
+    std::vector<GraphicsAdapterFacts> graphics_adapters;
+};
+
+inline LocalMachineFacts read_local_machine() {
+    LocalMachineFacts facts;
+    SYSTEM_INFO information{};
+    GetNativeSystemInfo(&information);
+    facts.processor_architecture = information.wProcessorArchitecture;
+    facts.logical_processors = information.dwNumberOfProcessors;
+    facts.processor_level = information.wProcessorLevel;
+    facts.processor_revision = information.wProcessorRevision;
+    facts.page_bytes = information.dwPageSize;
+    facts.allocation_granularity_bytes = information.dwAllocationGranularity;
+
+    MEMORYSTATUSEX memory{};
+    memory.dwLength = sizeof(memory);
+    if (GlobalMemoryStatusEx(&memory)) {
+        facts.memory_available = true;
+        facts.physical_total_bytes = memory.ullTotalPhys;
+        facts.physical_available_bytes = memory.ullAvailPhys;
+        facts.pagefile_total_bytes = memory.ullTotalPageFile;
+        facts.pagefile_available_bytes = memory.ullAvailPageFile;
+        facts.virtual_total_bytes = memory.ullTotalVirtual;
+        facts.virtual_available_bytes = memory.ullAvailVirtual;
+    }
+    facts.primary_display_width = GetSystemMetrics(SM_CXSCREEN);
+    facts.primary_display_height = GetSystemMetrics(SM_CYSCREEN);
+    facts.system_dpi = GetDpiForSystem();
+
+    Microsoft::WRL::ComPtr<IDXGIFactory1> factory;
+    if (SUCCEEDED(CreateDXGIFactory1(IID_PPV_ARGS(factory.GetAddressOf())))) {
+        constexpr UINT maximum_adapters = 16;
+        for (UINT index = 0; index < maximum_adapters; ++index) {
+            Microsoft::WRL::ComPtr<IDXGIAdapter1> adapter;
+            const HRESULT found = factory->EnumAdapters1(index, adapter.GetAddressOf());
+            if (found == DXGI_ERROR_NOT_FOUND) break;
+            if (FAILED(found)) continue;
+            DXGI_ADAPTER_DESC1 description{};
+            if (FAILED(adapter->GetDesc1(&description))) continue;
+            facts.graphics_adapters.push_back(GraphicsAdapterFacts{
+                wide_to_utf8(description.Description),
+                static_cast<std::uint64_t>(description.DedicatedVideoMemory),
+                static_cast<std::uint64_t>(description.DedicatedSystemMemory),
+                static_cast<std::uint64_t>(description.SharedSystemMemory),
+                description.VendorId, description.DeviceId,
+                (description.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) != 0});
+        }
+    }
+    return facts;
+}
+
+inline CurrentProcessFacts read_current_process() noexcept {
+    CurrentProcessFacts facts;
+    const HANDLE process = GetCurrentProcess();
+
+    FILETIME created{}, exited{}, kernel{}, user{};
+    if (GetProcessTimes(process, &created, &exited, &kernel, &user)) {
+        facts.times_available = true;
+        facts.creation_100ns = filetime_value(created);
+        facts.kernel_100ns = filetime_value(kernel);
+        facts.user_100ns = filetime_value(user);
+    }
+
+    PROCESS_MEMORY_COUNTERS_EX memory{};
+    memory.cb = sizeof(memory);
+    if (GetProcessMemoryInfo(process,
+            reinterpret_cast<PROCESS_MEMORY_COUNTERS*>(&memory), sizeof(memory))) {
+        facts.memory_available = true;
+        facts.page_faults = memory.PageFaultCount;
+        facts.working_set_bytes = memory.WorkingSetSize;
+        facts.peak_working_set_bytes = memory.PeakWorkingSetSize;
+        facts.private_committed_bytes = memory.PrivateUsage;
+        facts.peak_committed_bytes = memory.PeakPagefileUsage;
+        facts.paged_pool_bytes = memory.QuotaPagedPoolUsage;
+        facts.peak_paged_pool_bytes = memory.QuotaPeakPagedPoolUsage;
+        facts.nonpaged_pool_bytes = memory.QuotaNonPagedPoolUsage;
+        facts.peak_nonpaged_pool_bytes = memory.QuotaPeakNonPagedPoolUsage;
+    }
+
+    IO_COUNTERS io{};
+    if (GetProcessIoCounters(process, &io)) {
+        facts.io_available = true;
+        facts.read_operations = io.ReadOperationCount;
+        facts.write_operations = io.WriteOperationCount;
+        facts.other_operations = io.OtherOperationCount;
+        facts.read_bytes = io.ReadTransferCount;
+        facts.write_bytes = io.WriteTransferCount;
+        facts.other_bytes = io.OtherTransferCount;
+    }
+
+    DWORD handles{};
+    if (GetProcessHandleCount(process, &handles)) {
+        facts.handles_available = true;
+        facts.handles = handles;
+    }
+
+    ULONG64 cycles{};
+    if (QueryProcessCycleTime(process, &cycles)) {
+        facts.cycles_available = true;
+        facts.cycles = cycles;
+    }
+
+    SetLastError(ERROR_SUCCESS);
+    const DWORD gdi = GetGuiResources(process, GR_GDIOBJECTS);
+    if (gdi != 0 || GetLastError() == ERROR_SUCCESS) {
+        facts.gdi_available = true;
+        facts.gdi_objects = gdi;
+    }
+    SetLastError(ERROR_SUCCESS);
+    const DWORD users = GetGuiResources(process, GR_USEROBJECTS);
+    if (users != 0 || GetLastError() == ERROR_SUCCESS) {
+        facts.user_available = true;
+        facts.user_objects = users;
+    }
+    return facts;
+}
+
+struct ActiveFileFacts {
+    bool available{};
+    bool volume_available{};
+    std::uint64_t bytes{};
+    std::uint64_t allocation_bytes{};
+    std::uint64_t links{};
+    std::uint64_t creation_100ns{};
+    std::uint64_t last_write_100ns{};
+    std::uint64_t change_100ns{};
+    std::uint64_t available_volume_bytes{};
+    std::uint64_t total_volume_bytes{};
+    std::uint64_t free_volume_bytes{};
+};
+
+inline ActiveFileFacts read_active_file(const std::filesystem::path& path) noexcept {
+    ActiveFileFacts facts;
+    if (path.empty()) return facts;
+    NativeHandle file(CreateFileW(path.c_str(), FILE_READ_ATTRIBUTES,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING,
+        FILE_ATTRIBUTE_NORMAL, nullptr));
+    if (!file) return facts;
+
+    FILE_STANDARD_INFO standard{};
+    FILE_BASIC_INFO basic{};
+    if (GetFileInformationByHandleEx(file.get(), FileStandardInfo,
+                                     &standard, sizeof(standard)) &&
+        GetFileInformationByHandleEx(file.get(), FileBasicInfo, &basic, sizeof(basic))) {
+        facts.available = !standard.Directory;
+        facts.bytes = standard.EndOfFile.QuadPart >= 0
+            ? static_cast<std::uint64_t>(standard.EndOfFile.QuadPart) : 0;
+        facts.allocation_bytes = standard.AllocationSize.QuadPart >= 0
+            ? static_cast<std::uint64_t>(standard.AllocationSize.QuadPart) : 0;
+        facts.links = standard.NumberOfLinks;
+        facts.creation_100ns = static_cast<std::uint64_t>(basic.CreationTime.QuadPart);
+        facts.last_write_100ns = static_cast<std::uint64_t>(basic.LastWriteTime.QuadPart);
+        facts.change_100ns = static_cast<std::uint64_t>(basic.ChangeTime.QuadPart);
+    }
+
+    auto directory = path.parent_path();
+    if (directory.empty()) {
+        std::error_code path_error;
+        directory = std::filesystem::current_path(path_error);
+        if (path_error) return facts;
+    }
+    ULARGE_INTEGER available{}, total{}, free{};
+    if (GetDiskFreeSpaceExW(directory.c_str(), &available, &total, &free)) {
+        facts.volume_available = true;
+        facts.available_volume_bytes = available.QuadPart;
+        facts.total_volume_bytes = total.QuadPart;
+        facts.free_volume_bytes = free.QuadPart;
+    }
+    return facts;
+}
+
+inline double bounded_portrayal(std::uint64_t value, std::uint64_t reference) noexcept {
+    if (reference == 0) return value == 0 ? 0.0 : 1.0;
+    return std::clamp(static_cast<double>(value) / static_cast<double>(reference), 0.0, 1.0);
+}
+
+} // namespace system_measure_detail
+
+class AdaptiveMeasureWork {
+public:
+    bool begin(const MeasureWholeRequest& request) noexcept {
+        if (request.source.empty() || request.quantity.empty() || request.unit.empty() ||
+            request.sample_period <= std::chrono::milliseconds::zero() ||
+            request.duration <= std::chrono::milliseconds::zero() ||
+            request.retention != std::chrono::milliseconds::zero()) return false;
+        frequency_ = system_measure_detail::qpc_frequency();
+        opened_ = system_measure_detail::qpc_now();
+        requested_period_ticks_ = system_measure_detail::milliseconds_to_ticks(
+            request.sample_period, frequency_);
+        duration_ticks_ = system_measure_detail::milliseconds_to_ticks(request.duration, frequency_);
+        effective_period_ticks_ = requested_period_ticks_;
+        next_due_ = opened_;
+        completed_ = false;
+        duration_ = {};
+        duration_.declared_duration = request.duration;
+        duration_.declared_sample_period = request.sample_period;
+        duration_.qpc_frequency = frequency_;
+        duration_.opened_tick = opened_;
+        duration_.duration = DurationWhole{
+            static_cast<std::uint64_t>((std::max)(std::int64_t{0}, opened_)),
+            static_cast<std::uint64_t>((std::max)(std::int64_t{0}, opened_)),
+            frequency_, "QueryPerformanceCounter"};
+        duration_.effective_sample_period_ticks = effective_period_ticks_;
+        return true;
+    }
+
+    bool due(std::int64_t now) noexcept {
+        if (completed_) return false;
+        if (system_measure_detail::nonnegative_tick_span(now, opened_) >= duration_ticks_ &&
+            duration_.acquired_occurrences != 0) {
+            complete(now);
+            return false;
+        }
+        if (now < next_due_) return false;
+        if (now > next_due_ && requested_period_ticks_ != 0) {
+            const std::uint64_t late = system_measure_detail::nonnegative_tick_span(
+                now, next_due_);
+            duration_.missed_occurrences =
+                system_measure_detail::saturating_unsigned_add(
+                    duration_.missed_occurrences, late / requested_period_ticks_);
+        }
+        return true;
+    }
+
+    void record(std::int64_t began, std::int64_t ended, std::size_t encoded_bytes) noexcept {
+        if (completed_) return;
+        const std::uint64_t cost = system_measure_detail::nonnegative_tick_span(ended, began);
+        duration_.acquisition_ticks = system_measure_detail::saturating_unsigned_add(
+            duration_.acquisition_ticks, cost);
+        duration_.peak_acquisition_ticks = (std::max)(duration_.peak_acquisition_ticks, cost);
+        duration_.acquired_occurrences = system_measure_detail::saturating_unsigned_add(
+            duration_.acquired_occurrences, std::uint64_t{1});
+        const std::uint64_t measured_bytes = static_cast<std::uint64_t>(encoded_bytes);
+        if (duration_.acquired_occurrences == 1) {
+            duration_.first_occurrence_encoded_bytes = measured_bytes;
+        }
+        duration_.latest_occurrence_encoded_bytes = measured_bytes;
+        duration_.acquired_encoded_bytes = system_measure_detail::saturating_unsigned_add(
+            duration_.acquired_encoded_bytes, measured_bytes);
+        duration_.peak_occurrence_encoded_bytes = (std::max)(
+            duration_.peak_occurrence_encoded_bytes, measured_bytes);
+        // Evidence from the actual acquisition cost sets the next allowance.
+        // At most one percent of the interval may be knowingly requested by
+        // measurement work; an observed expensive call therefore lowers the
+        // cadence instead of starting catch-up work.
+        const std::uint64_t observed_peak = duration_.peak_acquisition_ticks;
+        const std::uint64_t evidenced_period = observed_peak >
+                (std::numeric_limits<std::uint64_t>::max)() / 100
+            ? (std::numeric_limits<std::uint64_t>::max)() : observed_peak * 100;
+        effective_period_ticks_ = (std::max)(requested_period_ticks_, evidenced_period);
+        duration_.effective_sample_period_ticks = effective_period_ticks_;
+        if (effective_period_ticks_ > requested_period_ticks_) {
+            const std::uint64_t deliberately_held =
+                (effective_period_ticks_ - 1) / requested_period_ticks_;
+            duration_.missed_occurrences =
+                system_measure_detail::saturating_unsigned_add(
+                    duration_.missed_occurrences, deliberately_held);
+        }
+        next_due_ = system_measure_detail::saturating_tick_add(
+            ended, effective_period_ticks_);
+    }
+
+    void note_held_occurrence() noexcept {
+        duration_.missed_occurrences = system_measure_detail::saturating_unsigned_add(
+            duration_.missed_occurrences, std::uint64_t{1});
+    }
+
+    void complete(std::int64_t now) noexcept {
+        if (completed_) return;
+        completed_ = true;
+        duration_.completed_tick = now;
+        const std::uint64_t elapsed = system_measure_detail::nonnegative_tick_span(now, opened_);
+        duration_.completed_duration = system_measure_detail::ticks_to_milliseconds(
+            (std::min)(elapsed, duration_ticks_), frequency_);
+        duration_.complete_for_declared_measured_domain = true;
+        duration_.duration.end_tick = static_cast<std::uint64_t>(
+            (std::max)(std::int64_t{0}, now));
+    }
+
+    bool completed() const noexcept { return completed_; }
+    const MeasureWindowEvidence& window_evidence() const noexcept { return duration_; }
+
+private:
+    std::uint64_t frequency_{1};
+    std::int64_t opened_{};
+    std::int64_t next_due_{};
+    std::uint64_t requested_period_ticks_{1};
+    std::uint64_t effective_period_ticks_{1};
+    std::uint64_t duration_ticks_{1};
+    bool completed_{};
+    MeasureWindowEvidence duration_{};
 };
 
 class SystemParticipation {
 public:
+    enum class Advance : std::uint8_t { waiting, measured, completed, held };
+
     SystemParticipation() = default;
 
-    bool dormant() const noexcept { return !grant_.has_value(); }
+    bool dormant() const noexcept { return !request_.has_value(); }
+    bool complete() const noexcept { return completed_association_.has_value(); }
+    const std::optional<MeasureWholeRequest>& measure_request() const noexcept { return request_; }
+    const std::optional<MeasureWholeRequest>& grant() const noexcept { return request_; }
 
-    const std::optional<MeasureContract>& grant() const noexcept { return grant_; }
-
-    bool begin_exact_grant(MeasureContract contract) {
-        if (contract.source.empty() || contract.quantity.empty() || contract.unit.empty() ||
-            contract.expression_code.empty() || contract.operand_role.empty()) {
-            return false;
-        }
-        if (!contract.exact_grant || contract.duration <= std::chrono::milliseconds::zero() ||
-            contract.sample_period <= std::chrono::milliseconds::zero() ||
-            contract.retention < std::chrono::milliseconds::zero()) {
-            return false;
-        }
-        grant_ = std::move(contract);
-        granted_levels_.clear();
-        opened_at_ = std::chrono::steady_clock::now();
+    bool begin_measure_window(MeasureWholeRequest request) {
+        if (!request.exact_source || !work_.begin(request)) return false;
+        opened_tick_ = system_measure_detail::qpc_now();
+        qpc_frequency_ = system_measure_detail::qpc_frequency();
+        duration_ticks_ = system_measure_detail::milliseconds_to_ticks(
+            request.duration, qpc_frequency_);
+        request_ = std::move(request);
+        raw_wholes_.clear();
+        raw_encoded_bytes_ = 0;
+        latest_levels_.clear();
+        completed_association_.reset();
+        last_workspace_revision_ = (std::numeric_limits<std::uint64_t>::max)();
+        machine_facts_captured_ = false;
         return true;
     }
 
+    // Compatibility wrapper for the prior APP-facing name.
+    bool begin_exact_grant(MeasureWholeRequest request) {
+        request.exact_source = true;
+        return begin_measure_window(std::move(request));
+    }
+
+    Advance advance_measure_window(const AuthoredWorld& world, LightRuntime& light,
+                                   const std::filesystem::path& active_file = {}) {
+        if (!request_) return Advance::held;
+        const std::int64_t now = system_measure_detail::qpc_now();
+        if (work_.completed()) return Advance::completed;
+        if (!work_.due(now)) {
+            if (work_.completed()) {
+                finish_window(world, light, now);
+                return Advance::completed;
+            }
+            return Advance::waiting;
+        }
+
+        const auto offset = system_measure_detail::ticks_to_milliseconds(
+            system_measure_detail::nonnegative_tick_span(now, opened_tick_),
+            (std::max)(std::uint64_t{1}, qpc_frequency_));
+        const std::int64_t began = system_measure_detail::qpc_now();
+        std::vector<AppMeasureSample> sample = capture_sample(world, active_file, offset);
+        const std::int64_t ended = system_measure_detail::qpc_now();
+        const std::size_t bytes = system_measure_detail::encoded_sample_bytes(sample);
+        work_.record(began, ended, bytes);
+        for (AppMeasureSample& whole : sample) retain_latest(std::move(whole));
+        if (system_measure_detail::nonnegative_tick_span(ended, opened_tick_) >=
+            duration_ticks_) {
+            work_.complete(ended);
+            finish_window(world, light, ended);
+            return Advance::completed;
+        }
+        return Advance::measured;
+    }
+
+    // Exact caller-associated facts, such as frame completion and renderer cost,
+    // enter through this path.  No content is inferred and no missing interval
+    // is replaced with zero.
+    bool admit_measure_whole(AppMeasureSample whole) {
+        if (!request_ || work_.completed() || !whole.exact) return false;
+        return retain_latest(std::move(whole));
+    }
+
+    // Compatibility wrapper: the supplied ratio is accepted as an exact
+    // caller-associated portrayal quantity, never as an inferred hardware reading.
     bool admit_exact_level(SystemPart part, double normalized) {
-        if (!grant_ || !std::isfinite(normalized)) return false;
-        const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::steady_clock::now() - opened_at_);
-        if (elapsed > grant_->duration || granted_levels_.size() >= maximum_granted_levels) {
-            close_grant();
-            return false;
-        }
-        granted_levels_.push_back({part, std::clamp(normalized, 0.0, 1.0), grant_->unit, elapsed});
+        if (!request_ || !std::isfinite(normalized) || work_.completed()) return false;
+        normalized = std::clamp(normalized, 0.0, 1.0);
+        AppMeasureSample whole = system_measure_detail::make_whole(
+            "LIGHT TREATMENT / caller-associated local measure", MeasureSource::application,
+            request_->quantity, request_->unit, Operand::number(normalized), {}, 0,
+            "exact caller-associated local measure supplied to LIGHT TREATMENT");
+        HardwareLevel level{part, normalized, request_->unit, {},
+                            whole.self_number, whole.quantity,
+                            whole.exact_encoding};
+        if (!admit_measure_whole(std::move(whole))) return false;
+        latest_levels_.push_back(std::move(level));
+        if (latest_levels_.size() > maximum_portrayed_levels_) latest_levels_.erase(latest_levels_.begin());
         return true;
     }
 
-    void close_grant() noexcept {
-        grant_.reset();
-        granted_levels_.clear();
+    void complete_measure_window(const AuthoredWorld& world, LightRuntime& light,
+                                 const std::filesystem::path& active_file = {}) {
+        if (!request_ || completed_association_) return;
+        std::int64_t now = system_measure_detail::qpc_now();
+        if (!machine_facts_captured_) {
+            const auto offset = system_measure_detail::ticks_to_milliseconds(
+                system_measure_detail::nonnegative_tick_span(now, opened_tick_),
+                (std::max)(std::uint64_t{1}, qpc_frequency_));
+            const std::int64_t began = system_measure_detail::qpc_now();
+            std::vector<AppMeasureSample> sample = capture_sample(
+                world, active_file, offset);
+            const std::int64_t ended = system_measure_detail::qpc_now();
+            work_.record(began, ended,
+                system_measure_detail::encoded_sample_bytes(sample));
+            for (AppMeasureSample& whole : sample) retain_latest(std::move(whole));
+            now = ended;
+        }
+        work_.complete(now);
+        finish_window(world, light, now);
     }
 
-    const std::vector<HardwareLevel>& granted_levels() const noexcept {
-        return granted_levels_;
+    std::optional<SpatialSystemAssociation> take_completed_association() {
+        auto answer = std::move(completed_association_);
+        completed_association_.reset();
+        machine_facts_captured_ = false;
+        return answer;
     }
 
-    static SpatialSystemAssociation synthetic_fixture(
-        const AuthoredWorld& world, LightRuntime& light, Vec3 root_position) {
-        const NumberList trace{0.18, 0.24, 0.31, 0.29, 0.43, 0.55, 0.49, 0.62};
-        const auto designation = [](Operand value, std::string role, Vec3 position) {
-            return OperandDesignation{0, std::move(value), std::move(role), std::nullopt, position};
-        };
+    void close_measure_window() noexcept {
+        request_.reset();
+        raw_wholes_.clear();
+        raw_encoded_bytes_ = 0;
+        latest_levels_.clear();
+        completed_association_.reset();
+        machine_facts_captured_ = false;
+    }
 
-        auto present = invoke_authored_light(
-            world, light, "PRESENTLY",
-            {designation(Operand::numbers(trace), "finite synthetic hardware-level trace",
-                         root_position + Vec3{-0.52, 0.0, 0.0}),
-             designation(Operand::integer(3), "requested trace position",
-                         root_position + Vec3{-0.28, 0.0, 0.0})},
-            "SYSTEM RELATION",
-            "Read the supplied finite trace at its designated present position.");
-        auto change = invoke_authored_light(
-            world, light, "CHANGELY",
-            {designation(Operand::numbers(trace), "finite synthetic hardware-level trace",
-                         root_position + Vec3{-0.12, 0.0, 0.0}),
-             designation(Operand::integer(3), "adjacent difference position",
-                         root_position + Vec3{0.08, 0.0, 0.0})},
-            "SYSTEM RELATION",
-            "Measure actual adjacent change in the supplied finite trace.");
-        auto magnitude = invoke_authored_light(
-            world, light, "CRIES",
-            {designation(Operand::numbers(trace), "finite hardware-level vector",
-                         root_position + Vec3{0.28, 0.0, 0.0})},
-            "SYSTEM RELATION",
-            "Measure the supplied finite hardware-level vector.");
-        auto spectrum = invoke_authored_light(
-            world, light, "PSYCHE",
-            {designation(Operand::numbers(trace), "finite hardware-level signal",
-                         root_position + Vec3{0.52, 0.0, 0.0})},
-            "SYSTEM RELATION",
-            "Transform the supplied finite signal into its frequency result.");
-        auto grouped = invoke_authored_light(
-            world, light, "DESIGNING",
-            {designation(Operand::expression(spectrum.invocation.expression.value),
-                         "complete PSYCHE expression",
-                         root_position + Vec3{0.0, 0.18, 0.0})},
-            "SYSTEM RELATION",
-            "Retain the complete machine relation calculation as one operative whole.");
+    void close_grant() noexcept { close_measure_window(); }
+    const std::vector<HardwareLevel>& granted_levels() const noexcept { return latest_levels_; }
+    std::size_t retained_measure_family_count() const noexcept { return raw_wholes_.size(); }
+    std::size_t retained_measure_byte_count() const noexcept { return raw_encoded_bytes_; }
+    bool retained_measure_byte_count_is_exact() const noexcept {
+        std::size_t counted{};
+        for (const AppMeasureSample& whole : raw_wholes_) {
+            if (counted > (std::numeric_limits<std::size_t>::max)() -
+                              whole.exact_encoding.size()) return false;
+            counted += whole.exact_encoding.size();
+        }
+        return counted == raw_encoded_bytes_;
+    }
 
-        SpatialSystemAssociation association;
-        association.bit = {0, 0, true, root_position};
-        association.light_units = {
-            "MY LIGHT", "PRESENTLY", "CHANGELY", "CRIES", "PSYCHE", "DESIGNING"
-        };
-        association.operands = {
-            {"PRESENTLY", "eval_at", 0, "finite synthetic trace", root_position + Vec3{-0.52, 0.0, 0.0}},
-            {"PRESENTLY", "eval_at", 1, "requested time position", root_position + Vec3{-0.28, 0.0, 0.0}},
-            {"CHANGELY", "forward_diff", 0, "finite synthetic trace", root_position + Vec3{0.0, 0.0, 0.0}},
-            {"CRIES", "vector_norm", 0, "trace magnitude", root_position + Vec3{0.28, 0.0, 0.0}},
-            {"PSYCHE", "dft", 0, "finite signal", root_position + Vec3{0.52, 0.0, 0.0}}
-        };
-        association.levels = {
-            {SystemPart::processor, 0.18, "synthetic ratio", std::chrono::milliseconds{0}},
-            {SystemPart::graphics, 0.24, "synthetic ratio", std::chrono::milliseconds{250}},
-            {SystemPart::memory, 0.31, "synthetic ratio", std::chrono::milliseconds{500}},
-            {SystemPart::storage, 0.29, "synthetic ratio", std::chrono::milliseconds{750}}
-        };
-        association.calculation_routes = {
-            present.invocation.expression, change.invocation.expression, magnitude.invocation.expression,
-            spectrum.invocation.expression, grouped.invocation.expression
-        };
-        association.applied_operations = {
-            std::move(present.application), std::move(change.application),
-            std::move(magnitude.application), std::move(spectrum.application),
-            std::move(grouped.application)
-        };
-        association.rooted_expression = grouped.invocation.expression;
-        association.contract = {
-            "bounded synthetic fixture",
-            "relative participation",
-            "synthetic ratio",
+    static SpatialSystemAssociation measured_foundation(
+        const AuthoredWorld& world, LightRuntime& light, Vec3 root_position,
+        const std::filesystem::path& active_file = {}) {
+        SystemParticipation participation;
+        MeasureWholeRequest request{
+            "Milesing application + authored graph whole + current Milesing process",
+            "bounded application-local foundation",
+            "exact typed views",
             std::chrono::milliseconds{250},
-            std::chrono::milliseconds{1000},
+            std::chrono::milliseconds{1},
             std::chrono::milliseconds{0},
-            "group(dft(trace))",
-            "portrayal demonstration",
-            false
+            "SIZE visible self numbers then DESIGNING whole",
+            "measured WholeSelf operand",
+            true
         };
-        association.purpose =
-            "Demonstrate one bit-rooted spatial relation among Light operands and named hardware levels.";
-        association.divinand =
-            "bit + position + Light routes + operand order + finite levels + purpose + source";
-        association.synthetic = true;
-        return association;
+        if (!participation.begin_measure_window(std::move(request))) {
+            throw std::logic_error("the measured foundation window could not begin");
+        }
+        participation.opened_tick_ = system_measure_detail::qpc_now();
+        participation.qpc_frequency_ = system_measure_detail::qpc_frequency();
+        participation.duration_ticks_ = 1;
+        const std::int64_t began = system_measure_detail::qpc_now();
+        auto sample = participation.capture_sample(world, active_file, {});
+        const std::int64_t ended = system_measure_detail::qpc_now();
+        participation.work_.record(began, ended,
+            system_measure_detail::encoded_sample_bytes(sample));
+        for (AppMeasureSample& whole : sample) {
+            participation.retain_latest(std::move(whole));
+        }
+        participation.work_.complete(ended);
+        participation.finish_window(world, light, ended, root_position);
+        if (!participation.completed_association_) {
+            throw std::logic_error("the measured foundation window did not complete");
+        }
+        return std::move(*participation.completed_association_);
     }
 
 private:
-    static constexpr std::size_t maximum_granted_levels = 16;
-    std::optional<MeasureContract> grant_;
-    std::vector<HardwareLevel> granted_levels_;
-    std::chrono::steady_clock::time_point opened_at_{};
+    static constexpr std::size_t maximum_portrayed_levels_{8};
+    std::optional<MeasureWholeRequest> request_;
+    AdaptiveMeasureWork work_;
+    std::vector<AppMeasureSample> raw_wholes_;
+    std::size_t raw_encoded_bytes_{};
+    std::vector<HardwareLevel> latest_levels_;
+    std::optional<SpatialSystemAssociation> completed_association_;
+    std::uint64_t last_workspace_revision_{(std::numeric_limits<std::uint64_t>::max)()};
+    bool machine_facts_captured_{};
+    std::int64_t opened_tick_{};
+    std::uint64_t qpc_frequency_{1};
+    std::uint64_t duration_ticks_{1};
+
+    bool retain_latest(AppMeasureSample whole) {
+        if (whole.exact_encoding.size() > maximum_retained_measure_bytes) {
+            work_.note_held_occurrence();
+            return false;
+        }
+        const auto existing = std::find_if(raw_wholes_.begin(), raw_wholes_.end(),
+            [&](const AppMeasureSample& candidate) {
+                return candidate.source == whole.source &&
+                       candidate.self_number == whole.self_number &&
+                       candidate.quantity == whole.quantity;
+            });
+        if (existing != raw_wholes_.end()) {
+            const std::size_t prior_bytes = existing->exact_encoding.size();
+            if (raw_encoded_bytes_ < prior_bytes) {
+                throw std::logic_error("retained measure-byte count lost exact association");
+            }
+            const std::size_t retained_without_prior = raw_encoded_bytes_ - prior_bytes;
+            if (retained_without_prior > maximum_retained_measure_bytes - whole.exact_encoding.size()) {
+                work_.note_held_occurrence();
+                return false;
+            }
+            const std::size_t replacement_bytes = whole.exact_encoding.size();
+            *existing = std::move(whole);
+            raw_encoded_bytes_ = retained_without_prior + replacement_bytes;
+            return true;
+        }
+        // This is a registry-family bound, not a time bound. Repeated samples
+        // replace their prior raw occurrence, so a long finite window does not
+        // grow memory with elapsed time.
+        if (raw_wholes_.size() >= maximum_retained_measure_families) {
+            work_.note_held_occurrence();
+            return false;
+        }
+        if (raw_encoded_bytes_ > maximum_retained_measure_bytes - whole.exact_encoding.size()) {
+            work_.note_held_occurrence();
+            return false;
+        }
+        const std::size_t added_bytes = whole.exact_encoding.size();
+        raw_wholes_.push_back(std::move(whole));
+        raw_encoded_bytes_ += added_bytes;
+        return true;
+    }
+
+    static Operand integer_view(std::uint64_t value) {
+        if (value <= static_cast<std::uint64_t>((std::numeric_limits<std::int64_t>::max)())) {
+            return Operand::integer(static_cast<std::int64_t>(value));
+        }
+        // A decimal term preserves every unsigned bit when the value cannot be
+        // represented by the signed-integer Operand alternative.  Converting
+        // such a reading to double here would silently erase low-order bits.
+        return Operand::text(std::to_string(value));
+    }
+
+    std::vector<AppMeasureSample> capture_sample(const AuthoredWorld& world,
+                                             const std::filesystem::path& active_file,
+                                             std::chrono::milliseconds offset) {
+        std::vector<AppMeasureSample> sample;
+        sample.reserve(36);
+        const auto add = [&](MeasureSource source, std::string self_number,
+                             std::string quantity, std::string unit,
+                             Operand value, std::string lineage,
+                             std::uint64_t revision = 0) {
+            sample.push_back(system_measure_detail::make_whole(
+                std::move(self_number), source, std::move(quantity), std::move(unit),
+                std::move(value), offset, revision, std::move(lineage)));
+        };
+
+        // Coalesce graph-whole facts: a repeated process sample does not copy
+        // unchanged authored coordinates or names.  Counts and revision are
+        // emitted once per observed authored revision.
+        if (world.revision != last_workspace_revision_) {
+            std::size_t visible{}, locked{};
+            NameList visible_self_numbers;
+            visible_self_numbers.reserve(world.nodes.size());
+            for (const WorldNode& node : world.nodes) {
+                if (node.visible) {
+                    ++visible;
+                    if (node.catalog_index < light_catalog.size()) {
+                        visible_self_numbers.emplace_back(light_catalog[node.catalog_index].unit);
+                    }
+                }
+                if (node.locked) ++locked;
+            }
+            add(MeasureSource::workspace, "MY LIGHT / authored graph whole",
+                "revision", "revision", integer_view(world.revision),
+                "AuthoredWorld.revision", world.revision);
+            add(MeasureSource::workspace, "MY LIGHT / authored bodies",
+                "authored body count", "bodies", integer_view(world.nodes.size()),
+                "AuthoredWorld.nodes.size", world.revision);
+            add(MeasureSource::workspace, "MY LIGHT / authored relations",
+                "authored relation count", "relations", integer_view(world.relations.size()),
+                "AuthoredWorld.relations.size", world.revision);
+            add(MeasureSource::workspace, "MY LIGHT / authored order",
+                "authored order extent", "bodies", integer_view(world.authored_order.size()),
+                "AuthoredWorld.authored_order.size", world.revision);
+            add(MeasureSource::workspace, "MY LIGHT / visible self numbers",
+                "visible authored body count", "bodies", integer_view(visible),
+                "count of WorldNode.visible", world.revision);
+            add(MeasureSource::workspace, "MY LIGHT / locked authored bodies",
+                "locked authored body count", "bodies", integer_view(locked),
+                "count of WorldNode.locked", world.revision);
+            add(MeasureSource::workspace, "MY LIGHT / visible self number whole",
+                "visible authored self numbers", "self numbers",
+                Operand::names(std::move(visible_self_numbers)),
+                "exact visible authored self numbers for SIZE", world.revision);
+            last_workspace_revision_ = world.revision;
+        }
+
+        // Machine facts enter only after an explicit LIGHT TREATMENT begin.
+        // They are captured once per finite window and associated as exact
+        // local technical views; the application neither transmits them nor
+        // starts this inspection during launch or workspace open.
+        if (!machine_facts_captured_) {
+            const auto machine = system_measure_detail::read_local_machine();
+            add(MeasureSource::machine, "LIGHT TREATMENT / processor architecture",
+                "native processor architecture", "Win32 architecture code",
+                integer_view(machine.processor_architecture),
+                "GetNativeSystemInfo.wProcessorArchitecture");
+            add(MeasureSource::machine, "LIGHT TREATMENT / logical processors",
+                "active logical processor count", "logical processors",
+                integer_view(machine.logical_processors),
+                "GetNativeSystemInfo.dwNumberOfProcessors");
+            add(MeasureSource::machine, "LIGHT TREATMENT / processor level",
+                "processor level", "Win32 processor level",
+                integer_view(machine.processor_level),
+                "GetNativeSystemInfo.wProcessorLevel");
+            add(MeasureSource::machine, "LIGHT TREATMENT / processor revision",
+                "processor revision", "Win32 processor revision",
+                integer_view(machine.processor_revision),
+                "GetNativeSystemInfo.wProcessorRevision");
+            add(MeasureSource::machine, "LIGHT TREATMENT / memory page",
+                "memory page extent", "bytes", integer_view(machine.page_bytes),
+                "GetNativeSystemInfo.dwPageSize");
+            add(MeasureSource::machine, "LIGHT TREATMENT / allocation granularity",
+                "virtual allocation granularity", "bytes",
+                integer_view(machine.allocation_granularity_bytes),
+                "GetNativeSystemInfo.dwAllocationGranularity");
+            if (machine.memory_available) {
+                add(MeasureSource::machine, "LIGHT TREATMENT / physical memory total",
+                    "physical memory total", "bytes",
+                    integer_view(machine.physical_total_bytes),
+                    "GlobalMemoryStatusEx.ullTotalPhys");
+                add(MeasureSource::machine, "LIGHT TREATMENT / physical memory available",
+                    "physical memory available", "bytes",
+                    integer_view(machine.physical_available_bytes),
+                    "GlobalMemoryStatusEx.ullAvailPhys");
+                add(MeasureSource::machine, "LIGHT TREATMENT / pagefile total",
+                    "commit limit", "bytes", integer_view(machine.pagefile_total_bytes),
+                    "GlobalMemoryStatusEx.ullTotalPageFile");
+                add(MeasureSource::machine, "LIGHT TREATMENT / pagefile available",
+                    "commit available", "bytes",
+                    integer_view(machine.pagefile_available_bytes),
+                    "GlobalMemoryStatusEx.ullAvailPageFile");
+                add(MeasureSource::machine, "LIGHT TREATMENT / virtual memory total",
+                    "process virtual address extent", "bytes",
+                    integer_view(machine.virtual_total_bytes),
+                    "GlobalMemoryStatusEx.ullTotalVirtual");
+                add(MeasureSource::machine, "LIGHT TREATMENT / virtual memory available",
+                    "process virtual address extent available", "bytes",
+                    integer_view(machine.virtual_available_bytes),
+                    "GlobalMemoryStatusEx.ullAvailVirtual");
+            }
+            add(MeasureSource::machine, "LIGHT TREATMENT / primary display width",
+                "primary display width", "physical pixels",
+                Operand::integer(machine.primary_display_width),
+                "GetSystemMetrics.SM_CXSCREEN");
+            add(MeasureSource::machine, "LIGHT TREATMENT / primary display height",
+                "primary display height", "physical pixels",
+                Operand::integer(machine.primary_display_height),
+                "GetSystemMetrics.SM_CYSCREEN");
+            add(MeasureSource::machine, "LIGHT TREATMENT / system DPI",
+                "system DPI", "dots per inch", integer_view(machine.system_dpi),
+                "GetDpiForSystem");
+            for (std::size_t index = 0; index < machine.graphics_adapters.size(); ++index) {
+                const auto& adapter = machine.graphics_adapters[index];
+                const std::string prefix = "LIGHT TREATMENT / graphics adapter " +
+                    std::to_string(index) + " / ";
+                add(MeasureSource::machine, prefix + "description",
+                    "graphics adapter description", "UTF-8 local description",
+                    Operand::text(adapter.description), "IDXGIAdapter1.GetDesc1.Description");
+                add(MeasureSource::machine, prefix + "dedicated video memory",
+                    "dedicated video memory", "bytes",
+                    integer_view(adapter.dedicated_video_bytes),
+                    "IDXGIAdapter1.GetDesc1.DedicatedVideoMemory");
+                add(MeasureSource::machine, prefix + "dedicated system memory",
+                    "dedicated system memory", "bytes",
+                    integer_view(adapter.dedicated_system_bytes),
+                    "IDXGIAdapter1.GetDesc1.DedicatedSystemMemory");
+                add(MeasureSource::machine, prefix + "shared system memory",
+                    "shared graphics memory", "bytes",
+                    integer_view(adapter.shared_system_bytes),
+                    "IDXGIAdapter1.GetDesc1.SharedSystemMemory");
+                add(MeasureSource::machine, prefix + "vendor",
+                    "graphics vendor ID", "PCI vendor ID",
+                    integer_view(adapter.vendor_id), "IDXGIAdapter1.GetDesc1.VendorId");
+                add(MeasureSource::machine, prefix + "device",
+                    "graphics device ID", "PCI device ID",
+                    integer_view(adapter.device_id), "IDXGIAdapter1.GetDesc1.DeviceId");
+                add(MeasureSource::machine, prefix + "software flag",
+                    "software graphics adapter", "boolean",
+                    Operand::truth(adapter.software), "IDXGIAdapter1.GetDesc1.Flags");
+            }
+            machine_facts_captured_ = true;
+        }
+
+        const auto process = system_measure_detail::read_current_process();
+        const auto add_process = [&](std::string self_number, std::string quantity,
+                                     std::string unit, std::uint64_t value,
+                                     std::string lineage) {
+            add(MeasureSource::current_process, std::move(self_number),
+                std::move(quantity), std::move(unit), integer_view(value),
+                std::move(lineage));
+        };
+        if (process.times_available) {
+            add_process("LIGHT TREATMENT / current process creation", "process creation time",
+                        "100 ns since 1601 UTC", process.creation_100ns, "GetProcessTimes.creation");
+            add_process("LIGHT TREATMENT / current process kernel time", "kernel execution time",
+                        "100 ns", process.kernel_100ns, "GetProcessTimes.kernel");
+            add_process("LIGHT TREATMENT / current process user time", "user execution time",
+                        "100 ns", process.user_100ns, "GetProcessTimes.user");
+        }
+        if (process.cycles_available) {
+            add_process("LIGHT TREATMENT / current process cycles", "processor cycles",
+                        "cycles", process.cycles, "QueryProcessCycleTime");
+        }
+        if (process.memory_available) {
+            add_process("LIGHT TREATMENT / current process page faults", "page fault count",
+                        "faults", process.page_faults, "GetProcessMemoryInfo.PageFaultCount");
+            add_process("LIGHT TREATMENT / current process working set", "working set",
+                        "bytes", process.working_set_bytes, "GetProcessMemoryInfo.WorkingSetSize");
+            add_process("LIGHT TREATMENT / current process peak working set", "peak working set",
+                        "bytes", process.peak_working_set_bytes, "GetProcessMemoryInfo.PeakWorkingSetSize");
+            add_process("LIGHT TREATMENT / current process private commit", "private committed memory",
+                        "bytes", process.private_committed_bytes, "GetProcessMemoryInfo.PrivateUsage");
+            add_process("LIGHT TREATMENT / current process peak commit", "peak committed memory",
+                        "bytes", process.peak_committed_bytes, "GetProcessMemoryInfo.PeakPagefileUsage");
+            add_process("LIGHT TREATMENT / current process paged pool", "paged pool use",
+                        "bytes", process.paged_pool_bytes, "GetProcessMemoryInfo.QuotaPagedPoolUsage");
+            add_process("LIGHT TREATMENT / current process peak paged pool", "peak paged pool use",
+                        "bytes", process.peak_paged_pool_bytes, "GetProcessMemoryInfo.QuotaPeakPagedPoolUsage");
+            add_process("LIGHT TREATMENT / current process nonpaged pool", "nonpaged pool use",
+                        "bytes", process.nonpaged_pool_bytes, "GetProcessMemoryInfo.QuotaNonPagedPoolUsage");
+            add_process("LIGHT TREATMENT / current process peak nonpaged pool", "peak nonpaged pool use",
+                        "bytes", process.peak_nonpaged_pool_bytes, "GetProcessMemoryInfo.QuotaPeakNonPagedPoolUsage");
+        }
+        if (process.io_available) {
+            add_process("LIGHT TREATMENT / current process read operations", "read operation count",
+                        "operations", process.read_operations, "GetProcessIoCounters.ReadOperationCount");
+            add_process("LIGHT TREATMENT / current process write operations", "write operation count",
+                        "operations", process.write_operations, "GetProcessIoCounters.WriteOperationCount");
+            add_process("LIGHT TREATMENT / current process other operations", "other operation count",
+                        "operations", process.other_operations, "GetProcessIoCounters.OtherOperationCount");
+            add_process("LIGHT TREATMENT / current process read bytes", "read transfer",
+                        "bytes", process.read_bytes, "GetProcessIoCounters.ReadTransferCount");
+            add_process("LIGHT TREATMENT / current process write bytes", "write transfer",
+                        "bytes", process.write_bytes, "GetProcessIoCounters.WriteTransferCount");
+            add_process("LIGHT TREATMENT / current process other bytes", "other transfer",
+                        "bytes", process.other_bytes, "GetProcessIoCounters.OtherTransferCount");
+        }
+        if (process.handles_available) {
+            add_process("LIGHT TREATMENT / current process handles", "open handle count",
+                        "handles", process.handles, "GetProcessHandleCount");
+        }
+        if (process.gdi_available) {
+            add_process("LIGHT TREATMENT / current process GDI wholes", "GDI object count",
+                        "objects", process.gdi_objects, "GetGuiResources.GR_GDIOBJECTS");
+        }
+        if (process.user_available) {
+            add_process("LIGHT TREATMENT / current process USER wholes", "USER object count",
+                        "objects", process.user_objects, "GetGuiResources.GR_USEROBJECTS");
+        }
+
+        const auto file = system_measure_detail::read_active_file(active_file);
+        if (file.available) {
+            add(MeasureSource::active_file, "LIGHT TREATMENT / active file bytes",
+                "active file length", "bytes", integer_view(file.bytes),
+                "GetFileInformationByHandleEx.FileStandardInfo.EndOfFile");
+            add(MeasureSource::active_file, "LIGHT TREATMENT / active file allocation",
+                "active file allocation", "bytes", integer_view(file.allocation_bytes),
+                "GetFileInformationByHandleEx.FileStandardInfo.AllocationSize");
+            add(MeasureSource::active_file, "LIGHT TREATMENT / active file links",
+                "active file link count", "links", integer_view(file.links),
+                "GetFileInformationByHandleEx.FileStandardInfo.NumberOfLinks");
+            add(MeasureSource::active_file, "LIGHT TREATMENT / active file creation",
+                "active file creation time", "100 ns since 1601 UTC",
+                integer_view(file.creation_100ns),
+                "GetFileInformationByHandleEx.FileBasicInfo.CreationTime");
+            add(MeasureSource::active_file, "LIGHT TREATMENT / active file writing",
+                "active file last write time", "100 ns since 1601 UTC",
+                integer_view(file.last_write_100ns),
+                "GetFileInformationByHandleEx.FileBasicInfo.LastWriteTime");
+            add(MeasureSource::active_file, "LIGHT TREATMENT / active file change",
+                "active file change time", "100 ns since 1601 UTC",
+                integer_view(file.change_100ns),
+                "GetFileInformationByHandleEx.FileBasicInfo.ChangeTime");
+        }
+        if (file.volume_available) {
+            add(MeasureSource::active_file, "LIGHT TREATMENT / active volume available",
+                "active volume bytes available to Milesing", "bytes",
+                integer_view(file.available_volume_bytes), "GetDiskFreeSpaceExW.available");
+            add(MeasureSource::active_file, "LIGHT TREATMENT / active volume total",
+                "active volume total bytes", "bytes", integer_view(file.total_volume_bytes),
+                "GetDiskFreeSpaceExW.total");
+            add(MeasureSource::active_file, "LIGHT TREATMENT / active volume free",
+                "active volume total free bytes", "bytes", integer_view(file.free_volume_bytes),
+                "GetDiskFreeSpaceExW.free");
+        }
+        return sample;
+    }
+
+    void finish_window(const AuthoredWorld& world, LightRuntime& light,
+                       std::int64_t completed_tick, Vec3 root_position = {}) {
+        if (completed_association_) return;
+        work_.complete(completed_tick);
+        SpatialSystemAssociation association;
+        association.measure = *request_;
+        MeasureWindowEvidence evidence = work_.window_evidence();
+        evidence.retained_encoded_bytes = static_cast<std::uint64_t>(raw_encoded_bytes_);
+        evidence.retained_measure_families = static_cast<std::uint32_t>(raw_wholes_.size());
+        evidence.retained_byte_count_exact = retained_measure_byte_count_is_exact();
+        association.window_evidence.push_back(std::move(evidence));
+        association.duration_wholes.push_back(work_.window_evidence().duration);
+        association.purpose =
+            "Complete the finite requested measure window over its declared application-local domain; portrayal identifies the completed graph whole.";
+        association.divinand =
+            "MY LIGHT DivinandWhole awaits the exact completed LIGHT TREATMENT whole and its measured finite unary route";
+
+        // SIZE receives the exact visible-self-number measure whole.  This is
+        // the root calculation for a one-sample foundation and remains valid
+        // for every longer window because its source revision is explicit.
+        const auto visible = std::find_if(raw_wholes_.rbegin(), raw_wholes_.rend(),
+            [](const AppMeasureSample& whole) {
+                return whole.quantity == "visible authored self numbers";
+            });
+        std::optional<LawfulWholeDerivation> size;
+        if (visible != raw_wholes_.rend()) {
+            MeasureWhole visible_whole = system_measure_detail::core_measure_whole(*visible);
+            TypedWholeView visible_view = system_measure_detail::core_whole_view(
+                *visible, visible_whole);
+            size = derive_whole_self(light, WholeSelfDerivationBody{
+                "LIGHT TREATMENT / visible-cardinality whole",
+                "SIZE",
+                "SIZE(visible authored self numbers)",
+                "The exact visible-self-number measure whole supplies one names view; SIZE returns exactly the finite extent of that supplied view.",
+                request_->quantity,
+                work_.window_evidence().duration,
+                {std::move(visible_whole)}, {}, {std::move(visible_view)}});
+            association.calculation_routes.push_back(size->invocation.expression);
+            const std::array<std::string_view, 1> size_roles{
+                "measured WholeSelf typed view"};
+            if (auto applied = designate_applied_operation(
+                    world, light, size->invocation.expression,
+                    size_roles,
+                    "LIGHT TREATMENT measured graph whole",
+                    "derive visible authored self-number cardinality")) {
+                applied->operands[0].spatial_position = root_position + Vec3{-0.28, 0.0, 0.0};
+                association.applied_operations.push_back(std::move(*applied));
+            }
+            association.derived_wholes.push_back(size->formation.graph_whole);
+        }
+
+        std::optional<LawfulWholeDerivation> grouped;
+        if (size) {
+            TypedWholeView grouped_view = form_typed_whole_view(
+                "LIGHT TREATMENT / complete cardinality view",
+                size->formation.graph_whole, WholeViewKind::term,
+                "BEDMAS grouping of a completed recursive graph whole",
+                "DESIGNING(SIZE whole)",
+                Operand::expression(size->invocation.expression.value),
+                size->formation.graph_whole.graph);
+            grouped = derive_whole_self(light, WholeSelfDerivationBody{
+                "LIGHT TREATMENT / completed measured-domain whole",
+                "DESIGNING",
+                "DESIGNING(SIZE(visible authored self numbers))",
+                "DESIGNING groups the already completed SIZE graph whole; it identifies the finite result and does not create or enlarge its measured domain.",
+                request_->quantity,
+                work_.window_evidence().duration,
+                {}, {size->formation.graph_whole}, {std::move(grouped_view)}});
+            association.calculation_routes.push_back(grouped->invocation.expression);
+            association.rooted_expression = grouped->invocation.expression;
+            const std::array<std::string_view, 1> group_roles{
+                "complete recursive graph whole"};
+            if (auto applied = designate_applied_operation(
+                    world, light, grouped->invocation.expression,
+                    group_roles,
+                    "LIGHT TREATMENT measured graph whole",
+                    "identify the completed measured-domain calculation")) {
+                applied->operands[0].spatial_position = root_position + Vec3{0.16, 0.18, 0.0};
+                association.applied_operations.push_back(std::move(*applied));
+            }
+            association.derived_wholes.push_back(grouped->formation.graph_whole);
+        }
+
+        // LIGHT TREATMENT itself now acts on measured-bit wholes.  Three
+        // exact sampled wholes supply two overlapping local graph wholes:
+        // U={a,b} and V={b,c}.  Their shared b value is literally the same
+        // measured whole, so finite sheaf gluing can form one global whole
+        // and prove that restricting it recovers both supplied locals.
+        std::optional<LawfulWholeDerivation> treatment;
+        std::optional<LawfulWholeDerivation> my_light;
+        if (raw_wholes_.size() >= 3) {
+            std::array<const AppMeasureSample*, 3> selected{};
+            const auto already_selected = [&](const AppMeasureSample* candidate) {
+                return std::find(selected.begin(), selected.end(), candidate) != selected.end();
+            };
+            const auto choose = [&](std::size_t position, const auto& predicate) {
+                if (selected[position]) return;
+                const auto found = std::find_if(raw_wholes_.begin(), raw_wholes_.end(),
+                    [&](const AppMeasureSample& candidate) {
+                        return candidate.exact && !already_selected(&candidate) &&
+                               candidate.exact_encoding.size() <=
+                                   maximum_direct_derived_measure_bytes &&
+                               predicate(candidate);
+                    });
+                if (found != raw_wholes_.end()) selected[position] = &*found;
+            };
+
+            // The live whole intentionally crosses the authored-map, machine,
+            // and running-process associations.  API-specific fallbacks stay
+            // deterministic while always choosing distinct exact occurrences.
+            choose(0, [](const AppMeasureSample& sample) {
+                return sample.source == MeasureSource::workspace &&
+                       sample.quantity == "visible authored self numbers";
+            });
+            choose(0, [](const AppMeasureSample& sample) {
+                return sample.source == MeasureSource::workspace;
+            });
+            choose(1, [](const AppMeasureSample& sample) {
+                return sample.source == MeasureSource::machine &&
+                       sample.quantity == "physical memory total";
+            });
+            choose(1, [](const AppMeasureSample& sample) {
+                return sample.source == MeasureSource::machine &&
+                       sample.quantity == "active logical processor count";
+            });
+            choose(1, [](const AppMeasureSample& sample) {
+                return sample.source == MeasureSource::machine;
+            });
+            choose(2, [](const AppMeasureSample& sample) {
+                return sample.source == MeasureSource::current_process &&
+                       sample.quantity == "working set";
+            });
+            choose(2, [](const AppMeasureSample& sample) {
+                return sample.source == MeasureSource::application &&
+                       sample.quantity == "last completed native frame";
+            });
+            choose(2, [](const AppMeasureSample& sample) {
+                return sample.source == MeasureSource::current_process;
+            });
+            for (std::size_t position = 0; position < selected.size(); ++position) {
+                choose(position, [](const AppMeasureSample&) { return true; });
+            }
+            if (std::any_of(selected.begin(), selected.end(),
+                            [](const AppMeasureSample* sample) { return sample == nullptr; })) {
+                throw std::logic_error(
+                    "LIGHT TREATMENT could not select three distinct exact measured wholes");
+            }
+            std::array<MeasureWhole, 3> selected_wholes{
+                system_measure_detail::core_measure_whole(*selected[0]),
+                system_measure_detail::core_measure_whole(*selected[1]),
+                system_measure_detail::core_measure_whole(*selected[2])};
+            const DurationWhole treatment_duration = work_.window_evidence().duration;
+            const std::string measured_domain = request_->quantity;
+
+            const auto local_section = [&](std::string name,
+                                           std::size_t left,
+                                           std::size_t right) {
+                DerivedGraphWhole local;
+                local.name = std::move(name);
+                local.self_number = "REALITY";
+                local.operation_code = "measured_local_section";
+                local.equation = "local measured graph section";
+                local.direct_proof =
+                    "Every local member is the exact canonical value carried by its measured-bit whole for this finite measure window.";
+                local.declared_measured_domain = measured_domain;
+                local.duration = treatment_duration;
+                for (const std::size_t index : {left, right}) {
+                    const MeasureWhole& whole = selected_wholes[index];
+                    local.graph.vertices.push_back(whole.name);
+                    local.facts.push_back({whole.name, selected[index]->exact_encoding});
+                    local.source_measure_wholes.push_back(whole.name);
+                    local.source_durations.push_back(whole.duration);
+                    local.exact_bit_ancestry.insert(local.exact_bit_ancestry.end(),
+                        whole.measured_bits.begin(), whole.measured_bits.end());
+                }
+                local.graph.edges.push_back({selected_wholes[left].name,
+                                             selected_wholes[right].name, 1.0});
+                local.complete_for_declared_measured_domain = true;
+                if (!exact_derived_graph_whole(local)) {
+                    throw std::logic_error("measured local graph whole did not complete for LIGHT TREATMENT");
+                }
+                return local;
+            };
+
+            FiniteWholeCover cover{
+                "LIGHT TREATMENT live finite cover", measured_domain,
+                treatment_duration,
+                {selected_wholes[0].name, selected_wholes[1].name,
+                 selected_wholes[2].name},
+                {{"U", {selected_wholes[0].name, selected_wholes[1].name}},
+                 {"V", {selected_wholes[1].name, selected_wholes[2].name}}}};
+            FiniteLocalWholeSections local_sections{{
+                {"U", local_section("LIGHT TREATMENT local U", 0, 1)},
+                {"V", local_section("LIGHT TREATMENT local V", 1, 2)}}};
+            SheafGlueResult glued = sheaf_glue(cover, local_sections);
+            if (!glued || !glued.whole) {
+                throw std::logic_error("LIGHT TREATMENT measured local graph wholes did not glue");
+            }
+
+            RelationValue cover_relation{{
+                {"U", selected_wholes[0].name},
+                {"U", selected_wholes[1].name},
+                {"V", selected_wholes[1].name},
+                {"V", selected_wholes[2].name}}};
+            RelationValue section_relation{{
+                {"U|" + selected_wholes[0].name, selected[0]->exact_encoding},
+                {"U|" + selected_wholes[1].name, selected[1]->exact_encoding},
+                {"V|" + selected_wholes[1].name, selected[1]->exact_encoding},
+                {"V|" + selected_wholes[2].name, selected[2]->exact_encoding}}};
+            const auto relation_whole = [&](std::string name,
+                                            const RelationValue& relation,
+                                            std::string quantity) {
+                const Operand encoded = Operand::relation(relation);
+                const std::string canonical = canonical_operand(encoded);
+                std::vector<std::uint8_t> bytes;
+                bytes.reserve(canonical.size());
+                for (const unsigned char byte : canonical) bytes.push_back(byte);
+                return form_measure_whole(
+                    std::move(name), "LIGHT TREATMENT measured derivation",
+                    std::move(quantity), "canonical relation bytes",
+                    measured_domain, treatment_duration, std::move(bytes));
+            };
+            MeasureWhole cover_whole = relation_whole(
+                "LIGHT TREATMENT cover operand whole", cover_relation,
+                "finite measured cover");
+            MeasureWhole sections_whole = relation_whole(
+                "LIGHT TREATMENT local-sections operand whole", section_relation,
+                "finite compatible local sections");
+            TypedWholeView cover_view = form_typed_whole_view(
+                "LIGHT TREATMENT cover typed view", cover_whole,
+                WholeViewKind::relation, "finite sheaf theory",
+                "finite cover U,V", Operand::relation(cover_relation),
+                cover_whole.measurement_graph);
+            TypedWholeView sections_view = form_typed_whole_view(
+                "LIGHT TREATMENT local sections typed view", sections_whole,
+                WholeViewKind::relation, "finite sheaf theory",
+                "compatible local sections s_U,s_V",
+                Operand::relation(section_relation), sections_whole.measurement_graph);
+            treatment = derive_whole_self(light, WholeSelfDerivationBody{
+                "LIGHT TREATMENT / live global measured whole",
+                "LIGHT TREATMENT",
+                "sheaf_glue({U,V},{s_U,s_V})",
+                glued.direct_proof,
+                measured_domain,
+                treatment_duration,
+                {cover_whole, sections_whole}, {},
+                {std::move(cover_view), std::move(sections_view)}});
+            association.calculation_routes.push_back(treatment->invocation.expression);
+            const std::array<std::string_view, 2> treatment_roles{
+                "finite cover derived from measured wholes",
+                "compatible local graph wholes with exact overlap"};
+            if (auto applied = designate_applied_operation(
+                    world, light, treatment->invocation.expression,
+                    treatment_roles,
+                    "LIGHT TREATMENT live whole-self derivation",
+                    "glue compatible local measured graph wholes into one unique global whole")) {
+                applied->operands[0].spatial_position = root_position + Vec3{-0.18, -0.16, 0.10};
+                applied->operands[1].spatial_position = root_position + Vec3{0.18, -0.16, 0.10};
+                association.applied_operations.push_back(std::move(*applied));
+            }
+            association.derived_wholes.push_back(treatment->formation.graph_whole);
+            association.derived_wholes.push_back(glued.whole->graph_whole);
+
+            // MY LIGHT now operates on the actual completed LIGHT TREATMENT
+            // result.  The first operand view retains the recursive Treatment
+            // graph ancestry.  The second has its own exact measured bits and
+            // canonically names one unary operation which is total on the
+            // finite relation returned by sheaf_glue: relational converse.
+            if (!treatment->invocation.value ||
+                !std::holds_alternative<RelationValue>(treatment->invocation.value->body)) {
+                throw std::logic_error(
+                    "completed LIGHT TREATMENT did not supply its exact finite global relation to MY LIGHT");
+            }
+            const NameList measured_unary_route{"converse"};
+            TypedWholeView treatment_result_view = form_typed_whole_view(
+                "MY LIGHT / exact LIGHT TREATMENT result view",
+                treatment->formation.graph_whole,
+                WholeViewKind::relation,
+                "finite sheaf global section with exact recursive graph ancestry",
+                "s in Gamma(U union V)",
+                *treatment->invocation.value,
+                treatment->formation.graph_whole.graph);
+
+            const Operand route_operand = Operand::names(measured_unary_route);
+            const std::string route_encoding = canonical_operand(route_operand);
+            std::vector<std::uint8_t> route_bytes;
+            route_bytes.reserve(route_encoding.size());
+            for (const unsigned char byte : route_encoding) route_bytes.push_back(byte);
+            MeasureWhole route_whole = form_measure_whole(
+                "MY LIGHT / measured finite unary route",
+                "LIGHT TREATMENT operation workstation",
+                "finite unary Light route",
+                "canonical self-number operation-code bytes",
+                measured_domain,
+                treatment_duration,
+                std::move(route_bytes),
+                Vec3{0.30, -0.38, 0.20});
+            TypedWholeView route_view = form_typed_whole_view(
+                "MY LIGHT / measured finite unary route view",
+                route_whole,
+                WholeViewKind::names,
+                "finite composition of unary Light operations",
+                "(converse)",
+                route_operand,
+                route_whole.measurement_graph);
+
+            my_light = derive_whole_self(light, WholeSelfDerivationBody{
+                "MY LIGHT / live DivinandWhole",
+                "MY LIGHT",
+                "divinand(LIGHT TREATMENT global section, (converse))",
+                "The source view is the realized finite sheaf global relation and retains every exact measured bit of the completed LIGHT TREATMENT graph whole. The separately measured route whole canonically encodes the unary operation converse. Relational converse is defined on this finite relation, so MY LIGHT applies that exact route and the derived whole retains both source and route ancestry.",
+                measured_domain,
+                treatment_duration,
+                {route_whole},
+                {treatment->formation.graph_whole},
+                {treatment_result_view, route_view}});
+            association.calculation_routes.push_back(my_light->invocation.expression);
+            association.rooted_expression = my_light->invocation.expression;
+            const std::array<std::string_view, 2> my_light_roles{
+                "exact completed LIGHT TREATMENT whole",
+                "exact measured finite unary Light route"};
+            if (auto applied = designate_applied_operation(
+                    world, light, my_light->invocation.expression,
+                    my_light_roles,
+                    "MY LIGHT live DivinandWhole",
+                    "apply the measured unary route to the exact completed LIGHT TREATMENT whole")) {
+                applied->operands[0].spatial_position =
+                    root_position + Vec3{-0.12, -0.38, 0.20};
+                applied->operands[1].spatial_position =
+                    root_position + Vec3{0.30, -0.38, 0.20};
+                association.applied_operations.push_back(std::move(*applied));
+            }
+            association.divinand_whole = form_divinand_whole(
+                treatment_result_view,
+                measured_unary_route,
+                my_light->formation.graph_whole,
+                my_light->invocation.expression);
+            association.divinand =
+                "MY LIGHT DivinandWhole: exact LIGHT TREATMENT recursive graph ancestry + exact measured unary route (converse) -> exact relational converse";
+            association.derived_wholes.push_back(my_light->formation.graph_whole);
+            association.measure_wholes.insert(association.measure_wholes.end(),
+                selected_wholes.begin(), selected_wholes.end());
+            association.measure_wholes.push_back(std::move(cover_whole));
+            association.measure_wholes.push_back(std::move(sections_whole));
+            association.measure_wholes.push_back(std::move(route_whole));
+        }
+
+        association.light_units = {
+            "MY LIGHT", "SIZE", "DESIGNING", "LIGHT TREATMENT", "CONISM"};
+        if (visible != raw_wholes_.rend()) {
+            association.operands.push_back({
+                "SIZE", "cardinality", 0, "measured WholeSelf typed view",
+                root_position + Vec3{-0.28, 0.0, 0.0},
+                visible->self_number, visible->graph_whole});
+        }
+        if (size) {
+            association.operands.push_back({
+                "DESIGNING", "group", 0, "complete derived whole",
+                root_position + Vec3{0.16, 0.18, 0.0},
+                "LIGHT TREATMENT / derived visible cardinality",
+                "MY LIGHT > LIGHT TREATMENT > derived whole > SIZE > expression > byte > bit"});
+        }
+        if (treatment) {
+            association.operands.push_back({
+                "LIGHT TREATMENT", "sheaf_glue", 0,
+                "finite cover derived from measured wholes",
+                root_position + Vec3{-0.18, -0.16, 0.10},
+                "LIGHT TREATMENT / cover operand whole",
+                treatment->formation.graph_whole.name});
+            association.operands.push_back({
+                "LIGHT TREATMENT", "sheaf_glue", 1,
+                "compatible local graph wholes with exact overlap",
+                root_position + Vec3{0.18, -0.16, 0.10},
+                "LIGHT TREATMENT / local-sections operand whole",
+                treatment->formation.graph_whole.name});
+        }
+        if (my_light) {
+            association.operands.push_back({
+                "MY LIGHT", "divinand", 0,
+                "exact completed LIGHT TREATMENT whole",
+                root_position + Vec3{-0.12, -0.38, 0.20},
+                treatment ? treatment->formation.graph_whole.name : std::string{},
+                my_light->formation.graph_whole.name});
+            association.operands.push_back({
+                "MY LIGHT", "divinand", 1,
+                "exact measured finite unary Light route",
+                root_position + Vec3{0.30, -0.38, 0.20},
+                "MY LIGHT / measured finite unary route",
+                my_light->formation.graph_whole.name});
+        }
+
+        // Portray at most eight exact facts.  Normalization is visibly a
+        // bounded bar calculation; exact source bytes stay in each measure
+        // whole and are never replaced by the ratio.
+        const auto find_exact_measure = [&](MeasureSource source,
+                                            std::string_view quantity) {
+            const auto found = std::find_if(raw_wholes_.rbegin(), raw_wholes_.rend(),
+                [&](const AppMeasureSample& whole) {
+                    return whole.exact && whole.source == source &&
+                           whole.quantity == quantity;
+                });
+            return found == raw_wholes_.rend() ? static_cast<const AppMeasureSample*>(nullptr)
+                                               : &*found;
+        };
+        const auto append_exact_measure = [&](const AppMeasureSample& sample) {
+            MeasureWhole measured = system_measure_detail::core_measure_whole(sample);
+            const bool present = std::any_of(
+                association.measure_wholes.begin(), association.measure_wholes.end(),
+                [&](const MeasureWhole& prior) { return prior.name == measured.name; });
+            if (!present) association.measure_wholes.push_back(std::move(measured));
+        };
+        const auto pair_encoding = [](std::string left_name,
+                                      const AppMeasureSample& left,
+                                      std::string right_name,
+                                      const AppMeasureSample& right) {
+            return canonical_operand(Operand::relation(RelationValue{{
+                {std::move(left_name), left.exact_encoding},
+                {std::move(right_name), right.exact_encoding}}}));
+        };
+
+        const AppMeasureSample* physical_available = find_exact_measure(
+            MeasureSource::machine, "physical memory available");
+        const AppMeasureSample* physical_total = find_exact_measure(
+            MeasureSource::machine, "physical memory total");
+        if (physical_available && physical_total) {
+            const double available = system_measure_detail::numeric_view(
+                *physical_available).value_or(0.0);
+            const double total = system_measure_detail::numeric_view(
+                *physical_total).value_or(0.0);
+            association.levels.push_back({SystemPart::memory,
+                total > 0.0 ? std::clamp(available / total, 0.0, 1.0) : 0.0,
+                "physical available / physical total; portrayal only",
+                physical_available->offset,
+                "LIGHT TREATMENT / physical memory available and total",
+                "physical memory availability portrayal",
+                pair_encoding("available", *physical_available,
+                              "total", *physical_total)});
+            append_exact_measure(*physical_available);
+            append_exact_measure(*physical_total);
+        }
+
+        const AppMeasureSample* dedicated_graphics = find_exact_measure(
+            MeasureSource::machine, "dedicated video memory");
+        const AppMeasureSample* shared_graphics{};
+        if (dedicated_graphics) {
+            constexpr std::string_view dedicated_suffix{"dedicated video memory"};
+            const std::size_t suffix = dedicated_graphics->self_number.rfind(dedicated_suffix);
+            const std::string adapter_prefix = suffix == std::string::npos
+                ? dedicated_graphics->self_number
+                : dedicated_graphics->self_number.substr(0, suffix);
+            const auto found = std::find_if(raw_wholes_.begin(), raw_wholes_.end(),
+                [&](const AppMeasureSample& whole) {
+                    return whole.exact && whole.source == MeasureSource::machine &&
+                           whole.quantity == "shared graphics memory" &&
+                           whole.self_number.starts_with(adapter_prefix);
+                });
+            if (found != raw_wholes_.end()) shared_graphics = &*found;
+        }
+        if (dedicated_graphics && shared_graphics) {
+            const long double dedicated = system_measure_detail::numeric_view(
+                *dedicated_graphics).value_or(0.0);
+            const long double shared = system_measure_detail::numeric_view(
+                *shared_graphics).value_or(0.0);
+            const long double total = dedicated + shared;
+            const double portrayal = total > 0.0L
+                ? std::clamp(static_cast<double>(dedicated / total), 0.0, 1.0) : 0.0;
+            association.levels.push_back({SystemPart::graphics, portrayal,
+                "dedicated / (dedicated + shared); portrayal only",
+                dedicated_graphics->offset,
+                "LIGHT TREATMENT / first graphics memory association",
+                "graphics memory dedication portrayal",
+                pair_encoding("dedicated", *dedicated_graphics,
+                              "shared", *shared_graphics)});
+            append_exact_measure(*dedicated_graphics);
+            append_exact_measure(*shared_graphics);
+        }
+
+        const AppMeasureSample* working_set{};
+        const AppMeasureSample* peak_working_set{};
+        for (const AppMeasureSample& whole : raw_wholes_) {
+            if (whole.quantity == "working set") working_set = &whole;
+            if (whole.quantity == "peak working set") peak_working_set = &whole;
+        }
+        if (working_set && peak_working_set) {
+            const auto current = system_measure_detail::numeric_view(*working_set).value_or(0.0);
+            const auto peak = system_measure_detail::numeric_view(*peak_working_set).value_or(0.0);
+            association.levels.push_back({SystemPart::memory,
+                peak > 0.0 ? std::clamp(current / peak, 0.0, 1.0) : 0.0,
+                "current / observed process peak", working_set->offset,
+                working_set->self_number, working_set->quantity,
+                working_set->exact_encoding});
+        }
+        for (auto it = raw_wholes_.rbegin(); it != raw_wholes_.rend() &&
+             association.levels.size() < maximum_portrayed_levels_; ++it) {
+            if (it->source != MeasureSource::workspace &&
+                it->quantity != "open handle count" &&
+                it->quantity != "read transfer" &&
+                it->quantity != "write transfer") continue;
+            const auto numeric = system_measure_detail::numeric_view(*it);
+            if (!numeric) continue;
+            const double unsigned_limit = static_cast<double>(
+                (std::numeric_limits<std::uint64_t>::max)());
+            const std::uint64_t whole_value = *numeric <= 0.0 ? 0
+                : *numeric >= unsigned_limit
+                    ? (std::numeric_limits<std::uint64_t>::max)()
+                    : static_cast<std::uint64_t>(*numeric);
+            const std::uint64_t process_reference =
+                system_measure_detail::saturating_unsigned_add(
+                    whole_value, std::uint64_t{256});
+            const double portrayal = system_measure_detail::bounded_portrayal(
+                whole_value, it->source == MeasureSource::workspace
+                    ? static_cast<std::uint64_t>((std::max)(std::size_t{1}, light_catalog.size()))
+                    : process_reference);
+            SystemPart part = it->source == MeasureSource::workspace
+                ? SystemPart::display : it->quantity == "open handle count"
+                ? SystemPart::processor : SystemPart::storage;
+            association.levels.push_back({part, portrayal, "bounded portrayal ratio",
+                it->offset, it->self_number, it->quantity, it->exact_encoding});
+        }
+
+        if (!association.derived_wholes.empty() &&
+            !association.derived_wholes.back().exact_bit_ancestry.empty()) {
+            const DerivedGraphWhole& rooted = association.derived_wholes.back();
+            const std::uint64_t selected = system_measure_detail::stable_address(
+                rooted.name + rooted.equation);
+            const MeasuredBitWhole& bit = rooted.exact_bit_ancestry[
+                static_cast<std::size_t>(selected % rooted.exact_bit_ancestry.size())];
+            association.bit = {bit.byte_position, bit.bit_position, bit.value,
+                root_position + bit.graph_position, bit.measure_whole,
+                "MY LIGHT > LIGHT TREATMENT > " + rooted.name +
+                    " > measured whole > byte > bit",
+                static_cast<std::uint64_t>(rooted.exact_bit_ancestry.size())};
+        }
+
+        completed_association_ = std::move(association);
+        // The sampled occurrences have served their finite window.  Only the
+        // derived whole, duration whole, exact lineage, and bounded portrayal
+        // remain; no periodic raw trace is retained here or written locally.
+        raw_wholes_.clear();
+        raw_encoded_bytes_ = 0;
+        latest_levels_.clear();
+        machine_facts_captured_ = false;
+    }
 };
 
 } // namespace milesing

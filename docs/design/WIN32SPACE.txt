@@ -1,11 +1,18 @@
 WIN32 CONCEPT SPACE
 
+STATUS
+This is the complete native-window target.  The v0.2 source currently supplies
+the top-level Win32 window, mouse/keyboard routing, DPI, timers, local open/save
+dialogs, dirty-work decisions and the six shared-work portrayals.  TSF, the
+application-local browser, drag/drop, system transfer and a full UI Automation
+provider remain named development work, not current release claims.
+
 PURPOSE
 Win32 gives the original Light application a permanent native desktop encounter: window, messages, pointer, keyboard, focus, text composition, local files, timers, accessibility opening, and ordinary Windows security.
 
 FEATURE TO DIRECT CODE
 - Application entry: wWinMain initializes COM, the app body, the renderer, and one visible top-level window.
-- Window class: RegisterClassExW binds the application-owned WndProc.
+- Window class: RegisterClassExW binds the application-associated WndProc.
 - Window creation: CreateWindowExW creates the Milesing desktop body with a Unicode title and per-monitor DPI awareness.
 - Message life: PeekMessageW/TranslateMessage/DispatchMessageW keep rendering, input, animation, and cancellation responsive.
 - Resize: WM_SIZE resizes the DXGI buffers and rebuilds only device-dependent render targets.
@@ -15,7 +22,7 @@ FEATURE TO DIRECT CODE
 - Text composition: TSF/IME exposes the application text store and composition ranges for complete language input.
 - Focus: WM_SETFOCUS/WM_KILLFOCUS and an authored focus route preserve exact attention across canvas, text, timeline, inspector, and portals.
 - DPI: GetDpiForWindow and WM_DPICHANGED keep readable geometry and exact pointer conversion.
-- Local files: an application-owned local filesystem browser presents fixed/removable/local volumes and validated paths without opening remote shell locations.
+- Local files: the native filesystem dialog returns a deliberate choice, after which C++ validates a fixed/removable/RAM/local-optical root and rejects UNC or remote-volume paths before opening or saving.
 - Clipboard: internal copy/cut/paste stays application-local; deliberate system clipboard transfer is an explicit export command.
 - Drag/drop: selected local paths enter through bounded validation and inert preview before authored admission.
 - Timing: QueryPerformanceCounter drives finite frame timing and authored timelines.
@@ -28,10 +35,10 @@ APPLICATION WORKSPACES
 - 3D FRACTAL: spatial placement, camera, portals, depth attention, generated geometry, and return to the same authored work.
 - OPERATIONS: operand selection, expression composition, preview, finite realization, results, and further application.
 - TIME/MEDIA: temporal relations, animation, generated portrayal, image/audio/video openings, and release/regeneration.
-- SYSTEM RELATION: the narrow bit-position-operand-hardware association, dormant until deliberately granted.
+- LIGHT TREATMENT: the narrow bit-position-operand-hardware association and finite whole-self derivation, dormant until deliberately begun.
 
 ORIGINAL COMMAND RULE
-Every menu, shortcut, toolbar button, pointer gesture, screen-reader action, and future controller route invokes the same application command. The command owns applicability, preview, commitment, reversal, reapplication, receipt, and recovery.
+Every menu, shortcut, toolbar button, pointer gesture, screen-reader action, and future controller route invokes the same application command. The command carries applicability, preview, commitment, reversal, reapplication, receipt, and recovery.
 
 LIGHT INSIDE THE WINDOW CODE
 - WndProc feeds COMMANDSEA `action_prefix` when one authored action must occur before a following process and METHODICALLY `compose` when two compatible functions become one command.

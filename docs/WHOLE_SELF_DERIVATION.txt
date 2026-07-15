@@ -1,0 +1,330 @@
+MILESINGLIGHT V0.2 - WHOLE-SELF DERIVATION
+
+PURPOSE
+After an explicit LIGHT TREATMENT begin, MilesingLight measures its authored
+work, native application, admitted local machine, active local workspace file,
+and current process.  Measured bits remain whole selves with exact source,
+duration, position, self-number route, operation route, and graph ancestry.
+Light operations act on those measured wholes.  The result is another whole
+that can become an operand in a higher derivation.
+
+The retained operation body is losslessly generative.  Exact operands, named
+operations, expression routes, results, purposes, and receipts re-enter
+compatible named operations.  It therefore has infinitely many lawful usable
+finite openings under recursive derivation.  Every admitted finite route
+retains the exact cause and route required for deterministic recalculation, so
+its determined consequence remains available whether or not it was previously
+portrayed or stored as a separately expanded object.  Finite hardware evaluates
+one finite cut at a time while the recursive family of usable openings remains
+unbounded.
+
+The system does not define a self number as a traditional numeral.  A numeric,
+logical, matrix, graph, spectrum, or other mathematical value is a typed view
+of a measured whole for the exact operation that needs that view.  The source
+whole and its ancestry remain attached.
+
+DECLARED-DOMAIN COMPLETION
+A construction is complete when every source, duration, operand role,
+operation, calculation, result, and direct proof required by its declared
+finite domain is present.  Leaving the declared domain open would leave the
+construction unfinished.  A completed construction can still enter a larger
+later construction as one whole operand.
+
+Portrayal identifies a completed construction in 2D or 3D.  Portrayal does not
+create mathematical completion, expand the declared domain, or claim knowledge
+beyond the measured sources.
+
+DIRECT DERIVATION ROUTE
+
+  self number
+    -> measurement graph
+    -> exact duration whole
+    -> measured quantity whole
+    -> measured bit wholes
+    -> typed mathematical view required by the selected Light operation
+    -> substituted operation equation
+    -> calculated derived graph whole
+    -> direct proof for that operation on those operands
+    -> LIGHT TREATMENT completed RelationValue source whole
+    -> exact measured finite unary route whole: converse
+    -> MY LIGHT DivinandWhole carrying source and route ancestry
+    -> optional 2D or 3D portrayal
+
+The completed association across its derived graph whole, canonical expression,
+and applied receipt retains:
+
+  - the exact measurement-channel names;
+  - the acquisition source and quantity;
+  - the measured quantity description and canonical bit encoding;
+  - the first and last QPC tick and the QPC frequency;
+  - every measured bit whole used by the typed view;
+  - the self number and operation code;
+  - every operand role and parent graph whole;
+  - the substituted equation and calculated result;
+  - the direct operation proof;
+  - the declared purpose and consumer.
+
+For the rooted MY LIGHT result, the association additionally retains the exact
+completed LIGHT TREATMENT graph whole as a relation view, the separately
+measured converse route whole, every source bit, every route bit, and the MY
+LIGHT derived graph whole produced by that route.
+
+MEASUREMENT FAMILIES
+
+AUTHORED WORLD — CHANGE-COALESCED
+  world revision
+  authored body, relation, and authored-order extents
+  visible and locked body extents
+  exact visible self-number names used by SIZE
+
+EXPLICIT LOCAL MACHINE — ONCE PER FINITE WINDOW
+  processor architecture, active logical processors, level, and revision
+  memory page and allocation-granularity extents
+  physical, pagefile, and virtual total/available byte extents
+  primary display pixel extents and system DPI
+  at most sixteen DXGI adapter descriptions, identifiers, software flags,
+  dedicated video/system memory, and shared memory extents
+
+CURRENT MILESINGLIGHT PROCESS
+  creation, kernel, and user times; processor cycles
+  working-set, peak-working-set, private commit, page-fault, and pool extents
+  read, write, and other operation/byte extents
+  process handle, GDI-object, and USER-object extents
+
+EXPLICIT ACTIVE LOCAL WORKSPACE FILE
+  file length, allocation, link extent, and file times
+  containing-volume available, total, and free byte extents
+
+NATIVE FRAME AND LIGHT TREATMENT WORK
+  last completed frame QPC cost, logical size, DPI, outcome, and frame counts
+  acquired and missed occurrence extents
+  acquisition and peak-acquisition QPC cost
+  acquired, peak-occurrence, and retained encoded-byte extents
+  effective sampling period, retained family extent, and exact counter check
+  finite cover, local sections, overlap agreement, result route, and proof
+
+Windows APIs provide values where they are the sufficient direct source:
+QueryPerformanceCounter/Frequency for relative time; GetNativeSystemInfo and
+GlobalMemoryStatusEx for processor/memory facts; DXGI adapter enumeration for
+graphics facts; GetSystemMetrics/GetDpiForSystem for display facts;
+GetProcessTimes, QueryProcessCycleTime, GetProcessMemoryInfo,
+GetProcessIoCounters, GetProcessHandleCount, and GetGuiResources for this
+process; and handle/volume queries for the explicitly active workspace file.
+Authored-world and completed-frame facts come directly from the application
+bodies associated with those facts.
+
+DERIVED MEASURES
+Rates, differences, spectra, norms, peaks, medians, changes, and other derived
+quantities are not duplicate gauges.  The appropriate Light operations derive
+them from measured wholes.  Examples include CHANGELY for adjacent difference,
+PRESENTLY for exact finite-window evaluation, PSYCHE for a finite spectrum,
+CRIES for a norm, MEDIA for a ternary median, SIZE for finite extent, and
+LIGHT TREATMENT for compatible finite gluing.
+
+WORKLOAD ALIGNMENT
+The app measures every acquisition with QPC.  The requested cadence begins at
+one second.  The next period is the greater of that requested period and one
+hundred times the worst acquisition cost observed in the active window.  Thus
+knowingly scheduled measurement work remains at or below one percent of its
+interval on the available evidence.  Missed intervals are counted; none are
+fabricated or backfilled.
+
+Authored-world facts are reacquired only when their revision changes.  Machine
+facts are acquired once per explicitly begun window.  Repeated process, file,
+and frame families replace their preceding raw occurrence.  Live raw retention
+is limited to 256 distinct families and 8 MiB of exact encodings.  A fact that
+would exceed either bound is held and counted rather than forcing growth.
+
+Completion selects distinct authored-world, admitted-machine, and
+current-process/application occurrences, each capped at 4096 encoded bytes for
+direct bit expansion.  It forms measured-bit wholes, derives SIZE and DESIGNING
+recursively, and applies LIGHT TREATMENT.  It then measures the exact finite
+unary route converse and applies MY LIGHT to the completed LIGHT TREATMENT
+RelationValue.  It retains the completed graph wholes, exact source and route
+ancestry, and exact application receipts, then releases every raw occurrence.
+Recursive growth uses completed wholes instead of an unbounded raw stream.
+
+THREE EXACT REDUCTION AND EXPANSION AXES
+The result must be reported on three separate axes.  Mixing them into one ZIP-
+style ratio would erase the central mathematical result.
+
+1. LOSSLESS GENERATIVE RETENTION
+
+  G = canonical bytes of retained exact operands, named operation routes,
+      results, purposes, and receipts;
+  E(n) = canonical bytes that would be required to separately store every
+         distinct deterministic result actually realized through an admitted
+         finite derivation allowance n.
+
+The measured generative expansion factor is E(n)/G for that exact allowance.
+The retained cause and route are lossless for those deterministic consequences:
+replay recalculates them from the same sources and routes, so separate storage or
+portrayal of every expanded result is unnecessary.  Because completed results
+can recursively re-enter compatible named operations, the body has infinitely
+many lawful usable finite openings.  Structural infinity receives no finite byte
+ratio; finite hardware evaluates a finite cut at a time.
+
+2. EXACT SELECTED MEASURED-BIT RETENTION
+
+  S = exact selected source bytes used by the completed cross-domain whole;
+  B = exact measured-bit ancestry retained by that live derived whole.
+
+The selected-ancestry factor is B/(8*S).  It equals one only when every selected
+source bit occurs exactly in the ancestry.  This axis concerns the selected
+finite whole, not every temporal observation that preceded it.
+
+3. TEMPORAL OBSERVATION RETENTION
+
+  A = every canonical external-observation payload byte actually acquired;
+  R = latest-family canonical bytes retained immediately before derivation.
+
+The temporal retention reduction is A/R.  Repeated external observations are
+coalesced by family, so released intermediate occurrences are not claimed as
+recoverable from R.  This temporal fact does not make the generative operation
+body lossy.
+
+The live application already reports A, R, and A/R at completion.  The release
+measurement will report the other two axes from one real 60-second run, then
+project a 60-minute run from observed recurring payload, effective cadence,
+one-time machine/authored payload, and the same hard bounds.  A projection is
+labelled as a projection, includes a range when observed payload or cadence
+varies, and never substitutes an unmeasured information-capacity claim for
+observed bytes, operations, and time.
+
+FINAL MEASURED EVIDENCE
+The final real run lasted 60.005809 seconds.  Its three axes were:
+
+  1. n=4096 admitted finite openings, G=776 canonical retained bytes,
+     E=706050 separately expanded bytes, and E/G=909.858x.  Every realized
+     opening was distinct and replayed byte-exactly.  Constructive induction on
+     the repeatable route gives infinitely many lawful usable finite openings.
+  2. S=4445 selected source bytes and B=35560 exact ancestry bits, giving
+     B/(8*S)=1.000.
+  3. A=16618 acquired external-observation bytes and R=2391 retained
+     latest-family bytes, giving A/R=6.950x.
+
+Using the observed recurring payload, effective cadence, one-time payload, and
+the same bounds, the evidence-based 60-minute projection is A=875900 bytes and
+A/R=366.332x.  Canonical persistence size C=30657 bytes remains a diagnostic
+quantity and is excluded from the three measured factors.  The measured run,
+definitions, and complete published result set are recorded directly here.
+
+EXACT BINDING SURFACE
+Generated/SELF_NUMBER_BINDINGS.inc carries the exact binding ledger as 112 self
+numbers times ten ordered fields, for 1,120 exact fields: SELF NUMBER,
+Operation, Codable symbol, Mathematical notation, Origin, Operands, Function,
+Reason, Actual C++ use, and Direct proof.  Miles's originating proof remains
+Miles's authored work.  The read-only Operations sheet presents the binding
+words directly.
+
+B opens the sheet for the selected self number.  Arrow keys navigate; the mouse
+wheel and Page Up / Page Down scroll; Home and End move to the beginning and end;
+B or Escape closes the sheet.  These interactions leave operation operands,
+invocations, expressions, receipts, and saved work unchanged.  The displayed
+Direct proof comes from the binding.  Separately labelled finite executor
+verification calculates the implemented operation on its exact fixture.
+
+LIGHT TREATMENT
+LIGHT TREATMENT is an outer self number derived from REALITY without changing
+the original pre-Treatment self-number routes.  Its operation is finite sheaf
+gluing:
+
+  Codable symbol: sheaf_glue(cover, local_sections)
+  Mathematical notation: glue_U(s_i)
+  Origin: finite sheaf theory
+
+Operands are a finite cover of exact measured graph scopes and a local whole
+for every patch.  Restriction is computed from canonical measured-member names,
+graph relations, and exact values; it is never accepted as an unsupported
+assertion.  Local wholes glue exactly when they agree on every shared measured
+member.  The result is the unique
+global whole on that declared finite cover.
+
+Direct proof:
+Every target key belongs to at least one patch.  Agreement on intersections
+makes the local value at each key independent of patch choice, so the merged
+whole exists.  Restricting the merge to any patch returns that patch's local
+whole.  Any second global whole with the same restrictions agrees at every
+target key and is therefore the same whole.
+
+If a shared key disagrees, LIGHT TREATMENT returns the exact member, the two
+finite opens, and the reason for disagreement, and forms no global result.  It
+never silently overwrites one local whole with another.
+
+LIVE MY LIGHT DIVINANDWHOLE
+The completed LIGHT TREATMENT RelationValue becomes a TypedWholeView over its
+exact DerivedGraphWhole.  A separate MeasureWhole canonically encodes the finite
+unary route converse.  MY LIGHT applies
+
+  divinand(LIGHT TREATMENT global section, (converse))
+
+and forms a concrete DivinandWhole.  That whole carries the source relation
+view, the exact route, duration, carrier expression, derived MY LIGHT graph
+whole, and measured-bit ancestry containing every source bit and every route
+bit.  Its exact relation result can immediately form a typed source view and
+re-enter later compatible whole-self derivation in memory.
+
+Canonical version-2 writing persists the LIGHT TREATMENT and MY LIGHT
+expressions, exact operand designations, results, and applied receipts.  The
+complete C++ DivinandWhole, including its full in-memory graph and bit ancestry,
+remains a live runtime structure rather than a serialized version-2 object.
+
+LIVE APPLICATION CONTROLS
+F6 opens the LIGHT TREATMENT workspace.  Q begins a quick 60-second finite
+measure window.  D begins a deep one-hour finite measure window.  Enter begins
+the quick window when dormant or completes the active window immediately.
+Escape revokes the active window and releases its ephemeral raw occurrences.
+These controls operate only while LIGHT TREATMENT is the selected workspace.
+
+RECURSIVE GROWTH
+A derived graph whole is a complete operand.  Later compatible operations can
+act on it, and LIGHT TREATMENT can glue compatible derived wholes into a wider
+whole.  MY LIGHT's concrete DivinandWhole already demonstrates that return path:
+the completed LIGHT TREATMENT source and exact converse route become one derived
+whole whose relation result can enter the next derivation.  This gives finite
+source bodies lossless generative reach across infinitely many lawful usable
+finite openings.  Increasingly rich whole selves can be computationally derived
+and later portrayed while finite hardware carries the finite cut being worked.
+
+NINE VERIFIED SUITES
+The integrated self-test reports nine distinct PASS suites: 112/112 finite
+executor verifications; 112/112 exact authored bindings covering all 1,120
+fields; read-only Operations binding-sheet interactions; live whole-self
+derivation through recursively reusable MY LIGHT DivinandWhole(converse);
+authored LIGHT TREATMENT and MY LIGHT association through canonical workspace
+persistence; canonical codec coverage for every Operand body and all 112
+fixtures; strict version-1 migration; recoverable local writing; and canonical
+realization through exact Editor restoration and replay-derived results.
+
+PASS strict version-1 migration: 8 changed arities + exact receipt enrichment + current replay + stable v2 + 18 altered-result/arity/presence rejections
+
+STRICT VERSION-1 MIGRATION
+Admission validates all 111 historical NODE self-number / operator-code /
+origin tuples.  Each of the eight changed-arity routes validates its exact
+historical result before deterministic receipt enrichment and current replay.
+Every unchanged route requires serialized result presence and canonical
+equality with current replay.  Accepted work associates LIGHT TREATMENT with
+REALITY and reserializes as stable canonical version 2.
+
+LOCAL PRIVACY
+Measurement is confined to the authored workspace, explicitly admitted local
+machine facts, the active local file, the MilesingLight window/renderer, and the
+MilesingLight process.  The application adds no server, account, telemetry,
+socket or HTTP client, ambient user surveillance, or public data collection.
+File measurement follows only the deliberately active filesystem path.  Raw
+measurement windows remain ephemeral.  Completed LIGHT TREATMENT expressions
+and MY LIGHT expressions, exact operand designations, results, and applied
+receipts enter the same authored runtime and become saveable through the normal
+canonical workspace route; periodic raw occurrences are released after
+completion.
+
+Launch and local workspace opening remain measurement-dormant.  They create a
+deterministic ready association and capture nothing.  Measurement begins only
+when the user explicitly starts LIGHT TREATMENT with Q, D, or Enter.
+
+Open and Save As validate each selected path at admission, and every save
+revalidates its target immediately before target inspection and writing.
+Validation admits directly attached local roots, rejects any existing
+reparse-point component, and allows a missing suffix only after every existing
+parent proves direct and local.  It is pathname validation, not
+handle-relative/no-follow race elimination, so residual pathname TOCTOU remains.
